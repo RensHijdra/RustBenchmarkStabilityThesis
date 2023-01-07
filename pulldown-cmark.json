@@ -1,0 +1,72 @@
+{
+  "name": "pulldown-cmark",
+  "bench_files": [
+    {
+      "name": "html_rendering",
+      "source": "benches/html_rendering.rs",
+      "benches": [
+        "crdt_total",
+        "crdt_html",
+        "crdt_all_options_parse",
+        "crdt_parse",
+        "smart_punctuation",
+        "links_n_emphasis",
+        "unescapes",
+        "autolinks_n_html"
+      ],
+      "sources": []
+    },
+    {
+      "name": "lib",
+      "source": "benches/lib.rs",
+      "benches": [
+        "pathological_codeblocks1/1",
+        "pathological_codeblocks1/2",
+        "pathological_codeblocks1/3",
+        "pathological_codeblocks1/4",
+        "pathological_codeblocks1/5",
+        "pathological_codeblocks1/6",
+        "pathological_codeblocks1/7",
+        "pathological_codeblocks1/8",
+        "pathological_codeblocks1/9",
+        "advanced_pathological_codeblocks/2",
+        "advanced_pathological_codeblocks/3",
+        "advanced_pathological_codeblocks/4",
+        "advanced_pathological_codeblocks/5"
+      ],
+      "sources": []
+    },
+    {
+      "name": "markdown-it",
+      "source": "benches/markdown-it.rs",
+      "benches": [
+        "inline-autolink.md",
+        "inline-em-flat.md",
+        "inline-em-nested.md",
+        "block-ref-flat.md",
+        "block-bq-nested.md",
+        "block-fences.md",
+        "block-lheading.md",
+        "block-code.md",
+        "inline-html.md",
+        "block-list-nested.md",
+        "rawtabs.md",
+        "lorem1.md",
+        "inline-newlines.md",
+        "block-bq-flat.md",
+        "block-list-flat.md",
+        "inline-links-nested.md",
+        "inline-backticks.md",
+        "block-hr.md",
+        "inline-links-flat.md",
+        "inline-entity.md",
+        "inline-em-worst.md",
+        "block-html.md",
+        "block-heading.md",
+        "inline-escape.md",
+        "block-ref-nested.md"
+      ],
+      "sources": []
+    }
+  ]
+}

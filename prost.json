@@ -1,0 +1,24 @@
+{
+  "name": "prost",
+  "bench_files": [
+    {
+      "name": "varint",
+      "source": "benches/varint.rs",
+      "benches": [
+        "varint/small/encode",
+        "varint/small/decode",
+        "varint/small/encoded_len",
+        "varint/medium/encode",
+        "varint/medium/decode",
+        "varint/medium/encoded_len",
+        "varint/large/encode",
+        "varint/large/decode",
+        "varint/large/encoded_len",
+        "varint/mixed/encode",
+        "varint/mixed/decode",
+        "varint/mixed/encoded_len"
+      ],
+      "sources": []
+    }
+  ]
+}

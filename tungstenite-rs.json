@@ -1,0 +1,13 @@
+{
+  "name": "tungstenite-rs",
+  "bench_files": [
+    {
+      "name": "buffer",
+      "source": "benches/buffer.rs",
+      "benches": [
+        "buffers/InputBuffer"
+      ],
+      "sources": []
+    }
+  ]
+}

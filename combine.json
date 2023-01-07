@@ -1,0 +1,26 @@
+{
+  "name": "combine",
+  "bench_files": [
+    {
+      "name": "http",
+      "source": "benches/http.rs",
+      "benches": [
+        "http_requests_small",
+        "http_requests_large",
+        "http_requests_large_cheap_error"
+      ],
+      "sources": []
+    },
+    {
+      "name": "json",
+      "source": "benches/json.rs",
+      "benches": [
+        "json",
+        "json_core_error",
+        "json_core_error_no_position",
+        "buffered_json"
+      ],
+      "sources": []
+    }
+  ]
+}

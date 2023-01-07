@@ -1,0 +1,27 @@
+[package]
+name = "scrape-crates"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = 'collect'
+path = 'src/collect.rs'
+
+[dependencies]
+crates_io_api = { version = "0.8.1", default-features = false, features = ["rustls"] }
+serde = { version = "1", features = ["derive"] }
+csv = "1.1"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+octocrab = "0.17.0"
+futures = "0.3"
+tokio = {version = "1.22.0", features = ["full"]}
+regex = "1.7.0"
+lazy_static = "1.4.0"
+rand = "0.8.5"
+serde_json = "1.0"
+itertools = "0.10.5"
+perf-event-open-sys = "4.0.0"
+statrs = "0.16.0"
+rstats = "1.2.22"
