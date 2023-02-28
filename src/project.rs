@@ -1,5 +1,7 @@
+use cargo_toml::{Manifest, Product};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use lazy_static::lazy_static;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -10,76 +12,238 @@ pub struct Project {
     pub(crate) bench_files: Vec<BenchFile>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BenchFile {
-    pub(crate) name: String,
-    pub(crate) source: String,
-    pub(crate) benches: Vec<String>,
-    pub(crate) sources: Vec<String>,
-}
+impl Project {
+    pub(crate) fn store(&self) -> std::io::Result<()> {
+        let serialized = serde_json::to_string(self).unwrap();
 
-#[allow(unused)]
-fn find_benchmarks_for_project(project_name: &str, project_additional_args: &Vec<String>) {
-    println!("Running `cargo bench -- --list` for '{}'", project_name);
-
-    let work_dir = get_workdir_for_project(project_name);
-
-    let output = Command::new("cargo").current_dir(&work_dir)
-        .arg("bench")
-        .args(project_additional_args)
-        .arg("--")
-        .arg("--list")
-        .output().expect("Failed to run cargo bench");
-
-    let benches_list = std::str::from_utf8(&*output.stderr).expect("Could not parse stderr as UTF-8");
-
-    let re = Regex::new(r"Running (benches/([\w/_-]+)\.rs)\s(\([\w/_\-]+\))").unwrap();
-    let re_bench_func = Regex::new(r"([\w_/:.\- ]+): bench").unwrap();
-
-    let mut bench_files: Vec<BenchFile> = vec![];
-    for cap in re.captures_iter(benches_list) {
-        let source = &cap[1];
-        let name = &cap[2];
-        print!("Checking benches for file {}... \t", source);
-
-
-        // TODO get the specific benches from the source file
-
-        let benches = Command::new("cargo").current_dir(&work_dir)
-            .arg("bench")
-            .args(project_additional_args)
-            .arg("--bench")
-            .arg(name.to_string())
-            .arg("--").arg("--list")
-            .output().expect("could not run --bench").stdout;
-
-        let benchmark_ids = re_bench_func.captures_iter(std::str::from_utf8(&*benches).expect("Could not parse UTF-8")).map(|c| String::from(&c[1])).collect::<Vec<String>>();
-        let bf = BenchFile { name: name.to_string(), source: source.to_string(), benches: benchmark_ids, sources: vec![] };
-        println!("found {} benchmark(s) for {}", bf.benches.len(), name);
-
-        // TODO find the source of the benched method
-        bench_files.push(bf)
+        std::fs::write(format!("{}.json", self.name), serialized)
     }
 
-    let proj = Project { name: project_name.to_string(), bench_files };
+    pub(crate) fn load(project: &str) -> serde_json::Result<Project> {
+        serde_json::from_str::<Project>(
+            &std::fs::read_to_string(format!("{}.json", project))
+                .expect(&format!("Could not read project {}.json", project)),
+        )
+    }
+}
 
-    let string = serde_json::to_string(&proj).unwrap();
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct TargetProject {
+    pub(crate) name: String,
+    pub(crate) repo_url: String,
+    pub(crate) repo_tag: String,
+}
 
-    std::fs::write(format!("{}.json", proj.name), string).unwrap();
-    println!("Wrote output to {}.json", proj.name);
+#[derive(Serialize, Deserialize, Debug)]
+pub struct BenchFile {
+    pub(crate) project: String,
+    pub(crate) name: String,
+    pub(crate) source: String,
+    pub(crate) features: Vec<String>,
+    pub(crate) benches: Vec<String>,
+}
 
-    // TODO append to targets.csv
+impl BenchFile {
+    pub fn get_workdir(&self) -> String {
+        let mut buf = Path::new(&self.source).to_path_buf();
+        buf.pop();
+        buf.to_str().unwrap().to_string()
+    }
 
-    // perf stat -e probe_chrono:iter /bin/su -x, -c "cd `pwd` && CARGO_PROFILE_BENCH_DEBUG=true cargo bench --features __internal_bench --bench chrono -- --profile-time 1 bench_datetime_from_str > /dev/null" - ${USER}
+    pub fn get_clean_name(&self) -> String {
+        self.name.replace(" ", "_").replace("/", "_").replace("-", "_")
+    }
+}
 
-    // println!("{:?}", output);
+fn get_manifest(path: &PathBuf) -> Manifest {
+    cargo_toml::Manifest::from_path(path.join("Cargo.toml").as_path()).expect(
+        format!(
+            "Could not find Cargo.toml for {}",
+            path.as_path().to_str().to_owned().unwrap()
+        )
+            .as_str(),
+    )
+}
+
+pub fn find_benchmarks_for_project(project_name: &str) -> Project {
+    let work_dir = get_workdir_for_project(project_name);
+    println!(
+        "Reading Cargo.toml for {} in {}",
+        project_name,
+        work_dir.to_str().unwrap()
+    );
+
+    let manifest = get_manifest(&work_dir);
+    let mut project_bench_products = manifest.bench;
+
+    project_bench_products.iter_mut().for_each(|product| {
+        if !product.path.is_some() {
+            product.path.replace(Path::new("benches")
+                .join(product.name.clone().unwrap())
+                .to_str()
+                .unwrap()
+                .to_string());
+        };
+    });
+
+    // If there are multiple workspaces, also use all benches within those
+    if manifest.workspace.is_some() {
+        project_bench_products.extend(
+            manifest
+                .workspace
+                .unwrap()
+                .members
+                .iter()
+                .flat_map(|member| {
+                    let mut bench_products = get_manifest(&work_dir.join(member)).bench;
+                    bench_products.iter_mut().for_each(|prod| {
+                        // Prepend the workspace name to the path
+                        if prod.path.is_some() {
+                            prod.path.replace(Path::new(member).join(prod.path.as_ref().unwrap()).to_str().unwrap().to_string());
+                        } else {
+                            prod.path.replace(Path::new(member).join("benches").join(prod.name.as_ref().unwrap()).to_str().unwrap().to_string());
+                        }
+                    });
+                    bench_products
+                })
+                .collect::<Vec<Product>>(),
+        );
+    }
+
+    lazy_static! {
+        static ref RE_BENCH_NAME: Regex = Regex::new(r"(?m)^(.+): bench$").unwrap();
+    }
+
+    let work_path = Path::new(&work_dir);
+
+    let mut bench_files: Vec<BenchFile> = vec![];
+    for product in project_bench_products {
+        let product_name = product.name.unwrap();
+        print!("Checking benches for {:?} in file {:?}... \t", &product_name, &product.path);
+
+        let mut command = Command::new("cargo");
+
+        let product_path = product.path.unwrap();
+        let mut abs_path = work_path.join(&product_path);
+        abs_path.pop(); // remove filename from path
+        println!("{:?}", abs_path);
+        command.current_dir(abs_path.to_str().unwrap().to_string()).arg("bench")
+        .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
+        .env("CARGO_PROFILE_BENCH_LTO", "no"); // Debug info is stripped if LTO is on
+
+        if product.required_features.len() > 0 {
+            command.arg("--features").arg(product.required_features.join(","));
+        }
+
+        command
+            .arg("--bench")
+            .arg(&product_name)
+            .arg("--")
+            .arg("--list");
+        println!("{:?}", command);
+        let benches = command.output().expect("could not run --bench").stdout;
+
+        let parsed_output = std::str::from_utf8(&*benches).expect("Could not parse UTF-8");
+
+        let benchmark_ids = RE_BENCH_NAME
+            .captures_iter(parsed_output)
+            .map(|c| String::from(&c[1]))
+            .collect::<Vec<String>>();
+
+        let bf = BenchFile {
+            project: project_name.to_string(),
+            name: product_name.to_string(),
+            source: product_path.clone(),
+            features: product.required_features.clone(),
+            benches: benchmark_ids,
+        };
+
+        println!("found {} benchmark(s) for {}", bf.benches.len(), product_name);
+        // Only push if there are actually benchmarks found
+        if bf.benches.len() != 0 {
+            bench_files.push(bf)
+        }
+    }
+
+    let proj = Project {
+        name: project_name.to_string(),
+        bench_files,
+    };
+
+    return proj;
 }
 
 pub fn get_workdir_for_project(project: &str) -> PathBuf {
-    Path::new(&std::env::current_dir().unwrap()).join("..").join("projects").join(project)
+    Path::new(&std::env::current_dir().unwrap())
+        .join("..")
+        .join("projects")
+        .join(project)
+}
+
+pub(crate) fn read_target_projects() -> Vec<TargetProject> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_path(Path::new("targets.csv"))
+        .expect("Could not find file targets.cvs, consider adding targets");
+    reader
+        .deserialize::<TargetProject>()
+        .filter_map(|record| record.ok())
+        .collect()
+}
+
+fn find_all_benchmarks() -> Vec<Project> {
+    let target_projects = read_target_projects();
+    target_projects
+        .iter()
+        .map(|target| find_benchmarks_for_project(&target.name))
+        .collect::<Vec<Project>>()
 }
 
 #[test]
 fn run_find_benchmarks_for_project() {
-    find_benchmarks_for_project("rust-prometheus", &vec![])
+    let project = find_benchmarks_for_project("tracing");
+    project.store().unwrap()
+}
+
+#[test]
+fn parse_all_from_targets() {
+    find_all_benchmarks()
+        .iter()
+        .for_each(|project| project.store().expect("Could not store project"));
+}
+
+#[test]
+fn count_benches() {
+    let num_projects = read_target_projects().len();
+    let sum: usize = read_target_projects()
+        .iter()
+        .map(|target| Project::load(&target.name).unwrap())
+        .map(|project| {
+            project
+                .bench_files
+                .iter()
+                .map(|b| b.benches.len())
+                .sum::<usize>()
+        })
+        .sum();
+    println!("{} benchmarks across {} projects", sum, num_projects);
+}
+
+#[test]
+fn benches_length() {
+    read_target_projects()
+        .iter()
+        .map(|target| Project::load(&target.name).unwrap())
+        .for_each(|project| {
+            println!(
+                "{}: {}",
+                project
+                    .bench_files
+                    .iter()
+                    .map(|b| b.benches.len())
+                    .sum::<usize>(),
+                project.name
+            )
+        });
+    println!("Done")
 }

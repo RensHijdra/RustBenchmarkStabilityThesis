@@ -9,12 +9,17 @@ edition = "2021"
 name = 'collect'
 path = 'src/collect.rs'
 
+[[bin]]
+name = 'parse'
+path = 'src/parse.rs'
+
 [dependencies]
 crates_io_api = { version = "0.8.1", default-features = false, features = ["rustls"] }
 serde = { version = "1", features = ["derive"] }
 csv = "1.1"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
-octocrab = "0.17.0"
+hex = "0.4.3"
+#octocrab = "0.18.1"
 futures = "0.3"
 tokio = {version = "1.22.0", features = ["full"]}
 regex = "1.7.0"
@@ -25,3 +30,12 @@ itertools = "0.10.5"
 perf-event-open-sys = "4.0.0"
 statrs = "0.16.0"
 rstats = "1.2.22"
+#rust-code-analysis = "0.0.25"
+cargo_toml = "0.14.0"
+ra_ap_rust-analyzer = {version="0.0.149"}
+ra_ap_project_model = "0.0.149"
+ra_ap_hir = "0.0.149"
+ra_ap_paths = "0.0.149"
+ra_ap_vfs = "0.0.149"
+ra_ap_ide = "0.0.149"
+ra_ap_syntax = "0.0.149"

@@ -26,7 +26,9 @@ fn list_rev_deps(page: u64) {
     ).unwrap();
     let rt = Runtime::new().unwrap();
     // Retrieve summary data. // TODO add more pages?
-    let rev_deps = client.crate_reverse_dependencies_page("criterion", page).unwrap();
+    let rev_deps = client
+        .crate_reverse_dependencies_page("criterion", page)
+        .unwrap();
     for c in &rev_deps.dependencies {
         let total_crate_downloads: u64;
         let reverse_dep_count: usize;
@@ -39,8 +41,10 @@ fn list_rev_deps(page: u64) {
                 total_crate_downloads = full_crate.total_downloads;
                 reverse_dep_count = full_crate.reverse_dependencies.dependencies.len();
                 repository = match full_crate.repository {
-                    None => { continue; }
-                    Some(rep) => { rep }
+                    None => {
+                        continue;
+                    }
+                    Some(rep) => rep,
                 };
             }
             Err(err) => {
@@ -51,19 +55,23 @@ fn list_rev_deps(page: u64) {
 
         // Repo data
         lazy_static! {
-            static ref RE: Regex = Regex::new(r"https://github.com/([\w-]*)/([\w-]*)(?:(?:/.*)|(?:\.git))?").unwrap();
+            static ref RE: Regex =
+                Regex::new(r"https://github.com/([\w-]*)/([\w-]*)(?:(?:/.*)|(?:\.git))?").unwrap();
         }
         let caps = match RE.captures_iter(&repository).next() {
-            None => { continue; }
-            Some(cap) => cap
-        };
-
-        let repo: Repository = match rt.block_on(octocrab::instance().repos(&caps[1], &caps[2]).get()) {
-            Ok(repo) => repo,
-            Err(_) => {
+            None => {
                 continue;
             }
+            Some(cap) => cap,
         };
+
+        let repo: Repository =
+            match rt.block_on(octocrab::instance().repos(&caps[1], &caps[2]).get()) {
+                Ok(repo) => repo,
+                Err(_) => {
+                    continue;
+                }
+            };
 
         let stars = repo.stargazers_count.unwrap();
         let forks = repo.forks_count.unwrap();
@@ -76,6 +84,19 @@ fn list_rev_deps(page: u64) {
         let has_toml = true;
 
         // Output as CSV
-        println!("{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}", crate_name, repository, forks, stars, watchers, subscribers, archived, last_edit, total_crate_downloads, reverse_dep_count, has_toml);
+        println!(
+            "{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}",
+            crate_name,
+            repository,
+            forks,
+            stars,
+            watchers,
+            subscribers,
+            archived,
+            last_edit,
+            total_crate_downloads,
+            reverse_dep_count,
+            has_toml
+        );
     }
 }
