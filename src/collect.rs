@@ -1,4 +1,5 @@
 #![allow(unused)]
+
 use std::fs;
 use std::ops::Add;
 use std::path::{Path, PathBuf};
@@ -10,9 +11,9 @@ use rand::thread_rng;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use project::{get_workdir_for_project, read_target_projects, Project, TargetProject};
 use crate::probe::{create_named_probe_for_adresses, delete_probe, find_probe_addresses};
 use crate::project::BenchFile;
+use project::{get_workdir_for_project, read_target_projects, Project, TargetProject};
 
 mod probe;
 mod project;
@@ -83,11 +84,17 @@ impl Benchmark {
     }
 
     fn get_clean_benchmark(&self) -> String {
-        self.benchmark.replace(" ", "_").replace("/", "_").replace("-", "_")
+        self.benchmark
+            .replace(" ", "_")
+            .replace("/", "_")
+            .replace("-", "_")
     }
 
     fn get_clean_id(&self) -> String {
-        self.id.replace(" ", "_").replace("/", "_").replace("-", "_")
+        self.id
+            .replace(" ", "_")
+            .replace("/", "_")
+            .replace("-", "_")
     }
 }
 
@@ -112,6 +119,10 @@ fn write_vec() {
 
 fn main() {
     do_one_iteration();
+    do_one_iteration();
+    do_one_iteration();
+    do_one_iteration();
+    do_one_iteration();
 }
 
 fn do_one_iteration() {
@@ -125,14 +136,21 @@ fn do_one_iteration() {
         let project = Project::load(&target_project.name).unwrap();
         // let project = Project::load("rustls").unwrap();
 
-        for group in &project.bench_files {
+        // TODO cargo clean
+        cargo_clean_project(&project.name);
 
+        for group in &project.bench_files {
             // Compile and save the executable
             let executable = compile_benchmark_file(&group);
 
             // Create probes
             let probe_addresses = find_probe_addresses(&project.name, &executable);
-            create_named_probe_for_adresses(&group.get_clean_name(), &project.name, &executable, probe_addresses);
+            create_named_probe_for_adresses(
+                &project.clean_name(),
+                &project.name,
+                &executable,
+                probe_addresses,
+            );
             existing_probes.push(group.get_clean_name());
 
             for bench_id in group.benches.iter() {
@@ -152,7 +170,8 @@ fn do_one_iteration() {
 
     run_requests.shuffle(&mut thread_rng());
 
-    run_requests.iter_mut()
+    run_requests
+        .iter_mut()
         .for_each(|(b, c)| do_new_iteration(b, c));
 
     for probe in existing_probes {
@@ -174,22 +193,30 @@ fn create_command_for_bench(benchmark: &Benchmark) -> Command {
         "power/energy-pkg/",
         "power/energy-ram/",
         "mem-loads",
-        &format!("probe_{}:*", benchmark.get_clean_benchmark())
+        &format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_project()),
     ]
     .join(",");
 
-    let perf_output_file = format!("perf_bench_{}_{}.csv", benchmark.get_clean_benchmark(), benchmark.get_clean_id());
-    let perf_output_file_path = Path::new(&std::env::current_dir().unwrap()).join("data").join(&benchmark.get_clean_project()).join(perf_output_file).to_str().unwrap().to_string();
+    let perf_output_file = format!("{}.csv", benchmark.get_clean_id());
+    let perf_output_file_path = Path::new(&std::env::current_dir().unwrap())
+        .join("data")
+        .join(&benchmark.get_clean_project())
+        .join(benchmark.get_clean_benchmark())
+        .join(perf_output_file)
+        .to_str()
+        .unwrap()
+        .to_string();
     fs::create_dir_all(Path::new(&perf_output_file_path).parent().unwrap());
 
     let mut command = Command::new("perf");
     command
         .arg("stat")
         .arg("--append")
-        .arg("-o").arg(perf_output_file_path)
+        .arg("-o")
+        .arg(perf_output_file_path)
         .arg("-e")
         .arg(measures)
-        .arg("-x,") // Output all on one line separated by comma
+        .arg("-x;") // Output all on one line separated by comma
         .arg("-C")
         .arg(CPU.to_string()) // measure core CPU
         .arg("-I1000")
@@ -229,12 +256,17 @@ fn create_command_for_bench(benchmark: &Benchmark) -> Command {
         // This way we match and only match the benchmark we want
         .arg(format!("^{}$", &benchmark.id));
 
-
     command
 }
 
 fn do_new_iteration(benchmark: &Benchmark, cmd: &mut Command) {
-    println!("Running project: {}, benchmark: {}, id: {} at {}", &benchmark.project, &benchmark.benchmark, &benchmark.id, cmd.get_current_dir().unwrap().to_str().unwrap());
+    println!(
+        "Running project: {}, benchmark: {}, id: {} at {}",
+        &benchmark.project,
+        &benchmark.benchmark,
+        &benchmark.id,
+        cmd.get_current_dir().unwrap().to_str().unwrap()
+    );
     let output = cmd.output().unwrap();
     // writeln!("{:?}", output.stderr);
     // println!("{:?}", output.stdout);
@@ -242,7 +274,14 @@ fn do_new_iteration(benchmark: &Benchmark, cmd: &mut Command) {
 
     let status = output.status;
     println!("{}", status);
+}
 
+fn cargo_clean_project(project: &str) -> () {
+    Command::new("cargo")
+        .arg("clean")
+        .arg(get_workdir_for_project(project))
+        .output()
+        .unwrap();
 }
 
 // fn store_csv(benchmark: &Benchmark, data: Vec<f64>) {
@@ -270,7 +309,11 @@ fn do_new_iteration(benchmark: &Benchmark, cmd: &mut Command) {
 // }
 
 fn compile_benchmark_file(benchmark: &BenchFile) -> String {
-    println!("Compiling {} in {}", benchmark.name, benchmark.get_workdir());
+    println!(
+        "Compiling {} in {}",
+        benchmark.name,
+        benchmark.get_workdir()
+    );
     let mut cargo = Command::new("cargo");
 
     cargo

@@ -1,15 +1,15 @@
 use cargo_toml::{Manifest, Product};
+use lazy_static::lazy_static;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use lazy_static::lazy_static;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Project {
-    pub(crate) name: String,
-    pub(crate) bench_files: Vec<BenchFile>,
+    pub name: String,
+    pub bench_files: Vec<BenchFile>,
 }
 
 impl Project {
@@ -19,28 +19,32 @@ impl Project {
         std::fs::write(format!("{}.json", self.name), serialized)
     }
 
-    pub(crate) fn load(project: &str) -> serde_json::Result<Project> {
+    pub fn load(project: &str) -> serde_json::Result<Project> {
         serde_json::from_str::<Project>(
             &std::fs::read_to_string(format!("{}.json", project))
                 .expect(&format!("Could not read project {}.json", project)),
         )
     }
+
+    pub fn clean_name(&self) -> String {
+        self.name.replace("-", "_")
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct TargetProject {
-    pub(crate) name: String,
-    pub(crate) repo_url: String,
-    pub(crate) repo_tag: String,
+pub struct TargetProject {
+    pub name: String,
+    pub repo_url: String,
+    pub repo_tag: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BenchFile {
-    pub(crate) project: String,
-    pub(crate) name: String,
-    pub(crate) source: String,
-    pub(crate) features: Vec<String>,
-    pub(crate) benches: Vec<String>,
+    pub project: String,
+    pub name: String,
+    pub source: String,
+    pub features: Vec<String>,
+    pub benches: Vec<String>,
 }
 
 impl BenchFile {
@@ -51,7 +55,10 @@ impl BenchFile {
     }
 
     pub fn get_clean_name(&self) -> String {
-        self.name.replace(" ", "_").replace("/", "_").replace("-", "_")
+        self.name
+            .replace(" ", "_")
+            .replace("/", "_")
+            .replace("-", "_")
     }
 }
 
@@ -61,7 +68,7 @@ fn get_manifest(path: &PathBuf) -> Manifest {
             "Could not find Cargo.toml for {}",
             path.as_path().to_str().to_owned().unwrap()
         )
-            .as_str(),
+        .as_str(),
     )
 }
 
@@ -78,11 +85,13 @@ pub fn find_benchmarks_for_project(project_name: &str) -> Project {
 
     project_bench_products.iter_mut().for_each(|product| {
         if !product.path.is_some() {
-            product.path.replace(Path::new("benches")
-                .join(product.name.clone().unwrap())
-                .to_str()
-                .unwrap()
-                .to_string());
+            product.path.replace(
+                Path::new("benches")
+                    .join(product.name.clone().unwrap())
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+            );
         };
     });
 
@@ -99,9 +108,22 @@ pub fn find_benchmarks_for_project(project_name: &str) -> Project {
                     bench_products.iter_mut().for_each(|prod| {
                         // Prepend the workspace name to the path
                         if prod.path.is_some() {
-                            prod.path.replace(Path::new(member).join(prod.path.as_ref().unwrap()).to_str().unwrap().to_string());
+                            prod.path.replace(
+                                Path::new(member)
+                                    .join(prod.path.as_ref().unwrap())
+                                    .to_str()
+                                    .unwrap()
+                                    .to_string(),
+                            );
                         } else {
-                            prod.path.replace(Path::new(member).join("benches").join(prod.name.as_ref().unwrap()).to_str().unwrap().to_string());
+                            prod.path.replace(
+                                Path::new(member)
+                                    .join("benches")
+                                    .join(prod.name.as_ref().unwrap())
+                                    .to_str()
+                                    .unwrap()
+                                    .to_string(),
+                            );
                         }
                     });
                     bench_products
@@ -119,7 +141,10 @@ pub fn find_benchmarks_for_project(project_name: &str) -> Project {
     let mut bench_files: Vec<BenchFile> = vec![];
     for product in project_bench_products {
         let product_name = product.name.unwrap();
-        print!("Checking benches for {:?} in file {:?}... \t", &product_name, &product.path);
+        print!(
+            "Checking benches for {:?} in file {:?}... \t",
+            &product_name, &product.path
+        );
 
         let mut command = Command::new("cargo");
 
@@ -127,12 +152,16 @@ pub fn find_benchmarks_for_project(project_name: &str) -> Project {
         let mut abs_path = work_path.join(&product_path);
         abs_path.pop(); // remove filename from path
         println!("{:?}", abs_path);
-        command.current_dir(abs_path.to_str().unwrap().to_string()).arg("bench")
-        .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
-        .env("CARGO_PROFILE_BENCH_LTO", "no"); // Debug info is stripped if LTO is on
+        command
+            .current_dir(abs_path.to_str().unwrap().to_string())
+            .arg("bench")
+            .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
+            .env("CARGO_PROFILE_BENCH_LTO", "no"); // Debug info is stripped if LTO is on
 
         if product.required_features.len() > 0 {
-            command.arg("--features").arg(product.required_features.join(","));
+            command
+                .arg("--features")
+                .arg(product.required_features.join(","));
         }
 
         command
@@ -158,7 +187,11 @@ pub fn find_benchmarks_for_project(project_name: &str) -> Project {
             benches: benchmark_ids,
         };
 
-        println!("found {} benchmark(s) for {}", bf.benches.len(), product_name);
+        println!(
+            "found {} benchmark(s) for {}",
+            bf.benches.len(),
+            product_name
+        );
         // Only push if there are actually benchmarks found
         if bf.benches.len() != 0 {
             bench_files.push(bf)
@@ -180,7 +213,7 @@ pub fn get_workdir_for_project(project: &str) -> PathBuf {
         .join(project)
 }
 
-pub(crate) fn read_target_projects() -> Vec<TargetProject> {
+pub fn read_target_projects() -> Vec<TargetProject> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_path(Path::new("targets.csv"))
