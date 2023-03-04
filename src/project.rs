@@ -280,3 +280,12 @@ fn benches_length() {
         });
     println!("Done")
 }
+
+#[test]
+fn get_git_projects() {
+    std::fs::create_dir_all(std::env::current_dir().unwrap().join("projects")).unwrap();
+
+    for project in read_target_projects() {
+        Command::new("git").current_dir(std::env::current_dir().unwrap().join("projects")).arg("clone").arg(project.repo_url).arg("--depth").arg("1").arg("--branch").arg(project.repo_tag).status().unwrap();
+    }
+}
