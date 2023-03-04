@@ -208,7 +208,6 @@ pub fn find_benchmarks_for_project(project_name: &str) -> Project {
 
 pub fn get_workdir_for_project(project: &str) -> PathBuf {
     Path::new(&std::env::current_dir().unwrap())
-        .join("..")
         .join("projects")
         .join(project)
 }
