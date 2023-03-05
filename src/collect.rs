@@ -271,10 +271,11 @@ fn do_new_iteration(benchmark: &Benchmark, cmd: &mut Command) {
         &benchmark.id,
         cmd.get_current_dir().unwrap().to_str().unwrap()
     );
+    println!("{:?}", cmd);
     let output = cmd.output().unwrap();
     // writeln!("{:?}", output.stderr);
     // println!("{:?}", output.stdout);
-    // println!("{}", std::str::from_utf8(&*output.stderr).unwrap());
+    println!("{}", std::str::from_utf8(&*output.stderr).unwrap());
 
     let status = output.status;
     println!("{}", status);
@@ -287,30 +288,6 @@ fn cargo_clean_project(project: &str) -> () {
         .output()
         .unwrap();
 }
-
-// fn store_csv(benchmark: &Benchmark, data: Vec<f64>) {
-//     let map = data
-//         .iter()
-//         .map(|x| format!("{x}"))
-//         .reduce(|acc, c| acc.add("\n").add(&c))
-//         .unwrap();
-//     fs::create_dir_all(format!(
-//         "data/{}/{}/",
-//         benchmark.get_clean_project(),
-//         benchmark.get_clean_benchmark()
-//     ))
-//     .unwrap();
-//     fs::write(
-//         format!(
-//             "data/{}/{}/{}.csv",
-//             benchmark.get_clean_project(),
-//             benchmark.get_clean_benchmark(),
-//             benchmark.get_clean_id()
-//         ),
-//         map,
-//     )
-//     .unwrap();
-// }
 
 fn compile_benchmark_file(benchmark: &BenchFile) -> String {
     println!(
@@ -325,7 +302,6 @@ fn compile_benchmark_file(benchmark: &BenchFile) -> String {
         .current_dir(get_workdir_for_project(&benchmark.project).join(benchmark.get_workdir())) // TODO get this from benchmark
         .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
         .env("CARGO_PROFILE_BENCH_LTO", "no") // Debug info is stripped if LTO is on
-        // .env("CARGO_PROFILE_BENCH_CODEGEN_UNITS", "16") // Debug info is stripped if LTO is on
         .arg("--bench")
         .arg(&benchmark.name)
         .arg("--no-run");
