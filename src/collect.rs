@@ -40,7 +40,7 @@ mod project;
 
 const ITERATIONS: usize = 1;
 const CPU: u8 = 1;
-const PROFILE_TIME: u8 = 1;
+const PROFILE_TIME: u8 = 30;
 
 #[derive(Debug, Serialize)]
 struct IterationStat {
@@ -120,12 +120,19 @@ fn write_vec() {
 fn main() {
     do_one_iteration();
     do_one_iteration();
-    do_one_iteration();
-    do_one_iteration();
-    do_one_iteration();
+    // do_one_iteration();
+    // do_one_iteration();
+    // do_one_iteration();
 }
 
 fn do_one_iteration() {
+
+    // Remove all artifacts
+    for record in read_target_projects() {
+        let project = Project::load(&record.name).unwrap();
+        cargo_clean_project(&project.name)
+    }
+
     let mut run_requests: Vec<(Benchmark, Command)> = Default::default();
     let mut existing_probes: Vec<String> = vec![];
 
@@ -134,10 +141,7 @@ fn do_one_iteration() {
 
         let target_project = record;
         let project = Project::load(&target_project.name).unwrap();
-        // let project = Project::load("rustls").unwrap();
 
-        // TODO cargo clean
-        cargo_clean_project(&project.name);
 
         for group in &project.bench_files {
             // Compile and save the executable
@@ -279,7 +283,7 @@ fn do_new_iteration(benchmark: &Benchmark, cmd: &mut Command) {
 fn cargo_clean_project(project: &str) -> () {
     Command::new("cargo")
         .arg("clean")
-        .arg(get_workdir_for_project(project))
+        .current_dir(get_workdir_for_project(project))
         .output()
         .unwrap();
 }
