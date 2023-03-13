@@ -66,7 +66,7 @@ pub(crate) fn find_probe_addresses(project: &str, executable: &str) -> Vec<Strin
     lazy_static! {
         static ref SECTION_RE: Regex = Regex::new(r"self\.measurement\.start\(\);((?:.|\n)*?)self\.measurement.end\(start\);").unwrap();
         static ref ITER_NEXT_TARGET: Regex = Regex::new(r"([a-f0-9]*?):\s*(?:[a-f0-9]{2}\s)*\s+?j[a-z]{1,2}\s*[a-z0-9]+? <criterion::bencher::Bencher<M>::iter\+0x[a-f0-9]+>").unwrap();
-        // static ref ITER_NEXT_TARGET: Regex = Regex::new(r"<core::ops::range::Range<T> as core::iter::range::RangeIteratorImpl>::spec_next:\n(?:.*?)\n\s+([a-f0-9]+):").unwrap();
+        static ref BATCHED_TARGET: Regex = Regex::new(r"[0-9a-f]+:\s+(?:[0-9a-f]{2}\s)+\s+[a-z]{2,4}\s+.+?,.+?\s+[0-9a-f]+:\s+(?:[0-9a-f]{2}\s)+\s+cmp\s+.+?,.+?\s+([[:xdigit:]]+):\s+(?:[0-9a-f]{2}\s)+\s+j[mpnegtlz]{1,2}\s+[0-9a-f]+\s+<criterion::bencher::Bencher<M>::iter_batched\+0").unwrap();
 
     }
 
@@ -78,6 +78,11 @@ pub(crate) fn find_probe_addresses(project: &str, executable: &str) -> Vec<Strin
         // for closure in CLOSURE_TARGET.captures_iter(iter_section) {
         let option = ITER_NEXT_TARGET.captures_iter(iter_section).last();
         // println!("{:?}", option);
+        if option.is_some() {
+            addresses.push(option.unwrap()[1].to_string())
+        }
+
+        let option = BATCHED_TARGET.captures_iter(iter_section).last();
         if option.is_some() {
             addresses.push(option.unwrap()[1].to_string())
         }
@@ -133,7 +138,7 @@ fn create_probe_for_executable() {
 
 #[test]
 fn run_test_with_probes() {
-    let project = Project::load("curve25519-dalek").unwrap();
+    let project = Project::load("ahash").unwrap();
     for bench in project.bench_files {
         let exe = compile_benchmark_file(&bench);
         println!("{}", exe);
@@ -155,6 +160,6 @@ fn run_test_with_probes() {
             let output = command.output().unwrap();
             println!("{}", std::str::from_utf8(&*output.stderr).unwrap());
         }
-        // delete_probe(&format!("probe_{}:*", &bench.name));
+        delete_probe(&format!("probe_{}:*", &bench.name));
     }
 }
