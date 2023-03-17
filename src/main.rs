@@ -1,3 +1,4 @@
+use std::process::Command;
 // #![allow(dead_code, unused)]
 //
 //
@@ -100,6 +101,7 @@
 //     }
 // }
 use clap::Parser;
+use crate::project::{clone_projects_from_targets, read_target_projects};
 
 mod collect;
 mod project;
@@ -113,6 +115,8 @@ mod probe;
 enum Cli {
     #[command(name = "run")]
     RunExperiment(ExperimentSettings),
+    #[command(subcommand)]
+    Project(ProjectCommand),
 }
 
 #[derive(clap::Args, Debug)]
@@ -121,18 +125,38 @@ struct ExperimentSettings {
     #[arg(short, default_value = "30")]
     iterations: usize,
 
-    #[arg(short = 't',long, default_value = "30")]
+    #[arg(short = 't', long, default_value = "30")]
     profile_time: u64,
 
     #[arg(short, long, default_value = "1")]
-    cpu: usize
+    cpu: usize,
+}
 
+#[derive(clap::Subcommand)]
+enum ProjectCommand {
+    Parse,
+    Download,
 }
 
 fn main() {
     let parse = Cli::parse();
     println!("{:?}", parse);
-    match parse { Cli::RunExperiment(settings) => {
-        collect::run(settings.iterations, settings.profile_time, settings.cpu)
-    } }
+    match parse {
+        Cli::RunExperiment(settings) => {
+            collect::run(settings.iterations, settings.profile_time, settings.cpu)
+        }
+        Cli::Project(subcommand) => {
+            match subcommand {
+                ProjectCommand::Parse => {
+                    project::find_all_benchmarks()
+                        .iter()
+                        .for_each(|project| project.store().expect("Could not store project"));
+                }
+                ProjectCommand::Download => {
+                    println!("Cloning projects that were found in targets.csv");
+                    clone_projects_from_targets();
+                }
+            }
+        }
+    }
 }

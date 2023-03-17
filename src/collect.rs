@@ -147,7 +147,7 @@ fn do_one_iteration(profile_time: u64, cpu: usize) {
 
     // Remove all artifacts
     for record in read_target_projects() {
-        let project = Project::load(&record.name).unwrap();
+        let project = Project::load(&record.name).expect("Could not load project {");
         cargo_clean_project(&project.name)
     }
 

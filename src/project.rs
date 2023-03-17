@@ -1,7 +1,7 @@
 use cargo_toml::{Manifest, Product};
 use lazy_static::lazy_static;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -68,7 +68,7 @@ fn get_manifest(path: &PathBuf) -> Manifest {
             "Could not find Cargo.toml for {}",
             path.as_path().to_str().to_owned().unwrap()
         )
-        .as_str(),
+            .as_str(),
     )
 }
 
@@ -223,12 +223,20 @@ pub fn read_target_projects() -> Vec<TargetProject> {
         .collect()
 }
 
-fn find_all_benchmarks() -> Vec<Project> {
+pub(crate) fn find_all_benchmarks() -> Vec<Project> {
     let target_projects = read_target_projects();
     target_projects
         .iter()
         .map(|target| find_benchmarks_for_project(&target.name))
         .collect::<Vec<Project>>()
+}
+
+fn get_git_project(project: TargetProject) -> ExitStatus {
+    Command::new("git").current_dir(std::env::current_dir().unwrap().join("projects"))
+        .arg("clone").arg(project.repo_url)
+        .arg("--depth").arg("1")
+        .arg("--branch").arg(project.repo_tag)
+        .status().expect("Could not clone project.")
 }
 
 #[test]
@@ -280,11 +288,10 @@ fn benches_length() {
     println!("Done")
 }
 
-#[test]
-fn get_git_projects() {
+pub(crate) fn clone_projects_from_targets() {
     std::fs::create_dir_all(std::env::current_dir().unwrap().join("projects")).unwrap();
 
     for project in read_target_projects() {
-        Command::new("git").current_dir(std::env::current_dir().unwrap().join("projects")).arg("clone").arg(project.repo_url).arg("--depth").arg("1").arg("--branch").arg(project.repo_tag).status().unwrap();
+        get_git_project(project);
     }
 }
