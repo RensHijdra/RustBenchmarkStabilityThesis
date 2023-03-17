@@ -1,13 +1,13 @@
 #![allow(unused_imports)]
+
 use std::path::Path;
 use std::process::Command;
 
 use crate::project::{find_benchmarks_for_project, get_workdir_for_project, BenchFile, Project};
-use crate::{compile_benchmark_file, create_command_for_bench, Benchmark};
+use crate::collect::{compile_benchmark_file, create_command_for_bench, Benchmark};
 use lazy_static::lazy_static;
 use ra_ap_hir::known::str;
 use regex::Regex;
-use tokio::select_priv_declare_output_enum;
 
 pub(crate) fn create_named_probe_for_adresses(
     name: &str,
@@ -108,7 +108,7 @@ pub(crate) fn delete_probe(probe: &str) -> bool {
 
 #[test]
 fn test_find_addresses() {
-    use crate::compile_benchmark_file;
+    use crate::collect::compile_benchmark_file;
 
     // let string =
     //     compile_benchmark_file("chrono", "chrono", &vec![String::from("__internal_bench")]);
@@ -119,7 +119,7 @@ fn test_find_addresses() {
 
 #[test]
 fn create_probe_for_executable() {
-    use crate::compile_benchmark_file;
+    use crate::collect::compile_benchmark_file;
 
     let project = "prost";
     let file = BenchFile {
@@ -147,15 +147,15 @@ fn run_test_with_probes() {
         let string =
             create_named_probe_for_adresses(&bench.project.replace("-", "_"), &project.name, &exe, probe_addresses);
         for bench_method in bench.benches {
-            let benchmark = Benchmark {
-                project: project.name.clone(),
-                benchmark: bench.name.clone(),
-                path: bench.source.clone().rsplit_once("/").unwrap().0.to_string(),
-                id: bench_method.clone(),
-                features: bench.features.clone(),
-            };
-            println!("{}", benchmark.id);
-            let mut command = create_command_for_bench(&benchmark);
+            let benchmark = Benchmark::new(
+                project.name.clone(),
+                bench.name.clone(),
+                bench.source.clone().rsplit_once("/").unwrap().0.to_string(),
+                bench_method.clone(),
+                bench.features.clone(),
+            );
+            println!("{}", bench_method);
+            let mut command = create_command_for_bench(&benchmark, 1, 1);
             println!("{:?}", command);
             let output = command.output().unwrap();
             println!("{}", std::str::from_utf8(&*output.stderr).unwrap());

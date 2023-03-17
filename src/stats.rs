@@ -1,7 +1,6 @@
 #![allow(unused)]
 use std::fs;
 
-mod project;
 
 use csv::{Trim};
 use itertools::Itertools;

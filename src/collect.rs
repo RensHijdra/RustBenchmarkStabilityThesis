@@ -11,12 +11,14 @@ use rand::thread_rng;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+
+
 use crate::probe::{create_named_probe_for_adresses, delete_probe, find_probe_addresses};
 use crate::project::BenchFile;
-use project::{get_workdir_for_project, read_target_projects, Project, TargetProject};
+use crate::project::{get_workdir_for_project, read_target_projects, Project, TargetProject};
 
-mod probe;
-mod project;
+// mod ::probe;
+// mod project;
 
 // Enable setting probes and traces
 // sudo sysctl kernel.perf_event_paranoid=-1 -w
@@ -38,9 +40,9 @@ mod project;
 
 // Do a logout
 
-const ITERATIONS: usize = 1;
-const CPU: u8 = 1;
-const PROFILE_TIME: u8 = 30;
+static mut ITERATIONS: usize = 1;
+static mut CPU: usize = 1;
+static mut PROFILE_TIME: u64 = 30;
 
 #[derive(Debug, Serialize)]
 struct IterationStat {
@@ -64,7 +66,7 @@ struct Probe {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash, PartialOrd, PartialEq, Eq)]
-struct Benchmark {
+pub struct Benchmark {
     project: String,
     benchmark: String,
     path: String,
@@ -96,6 +98,12 @@ impl Benchmark {
             .replace("/", "_")
             .replace("-", "_")
     }
+
+
+    pub fn new(project: String, benchmark: String, path: String, id: String, features: Vec<String>) -> Self {
+        Self { project, benchmark, path, id, features }
+    }
+
 }
 
 impl ToString for Benchmark {
@@ -118,14 +126,24 @@ fn write_vec() {
 }
 
 fn main() {
-    do_one_iteration();
-    do_one_iteration();
+    do_one_iteration(1, 1);
+    // do_one_iteration();
     // do_one_iteration();
     // do_one_iteration();
     // do_one_iteration();
 }
 
-fn do_one_iteration() {
+
+pub fn run(iterations: usize, profile_time: u64, cpu: usize) {
+
+
+    for _ in 0..iterations {
+        do_one_iteration(profile_time, cpu);
+    }
+}
+
+
+fn do_one_iteration(profile_time: u64, cpu: usize) {
 
     // Remove all artifacts
     for record in read_target_projects() {
@@ -166,7 +184,7 @@ fn do_one_iteration() {
                     features: group.features.clone(),
                 };
 
-                let command = create_command_for_bench(&bench);
+                let command = create_command_for_bench(&bench, profile_time, cpu);
                 run_requests.push((bench, command));
             }
         }
@@ -176,15 +194,15 @@ fn do_one_iteration() {
 
     run_requests
         .iter_mut()
-        .for_each(|(b, c)| do_new_iteration(b, c));
+        .for_each(|(b, c)| run_benchmark(b, c));
 
     for probe in existing_probes {
         delete_probe(&format!("probe_{}:*", probe));
     }
 }
 
-fn create_command_for_bench(benchmark: &Benchmark) -> Command {
-    let measures: String = vec![
+pub fn create_command_for_bench(benchmark: &Benchmark, profile_time: u64, cpu: usize) -> Command {
+    let events: String = vec![
         "duration_time",
         "cycles",
         "instructions",
@@ -199,7 +217,7 @@ fn create_command_for_bench(benchmark: &Benchmark) -> Command {
         "mem-loads",
         &format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_project()),
     ]
-    .join(",");
+        .join(",");
 
     let perf_output_file = format!("{}.csv", benchmark.get_clean_id());
     let perf_output_file_path = Path::new(&std::env::current_dir().unwrap())
@@ -213,33 +231,32 @@ fn create_command_for_bench(benchmark: &Benchmark) -> Command {
     fs::create_dir_all(Path::new(&perf_output_file_path).parent().unwrap());
 
     let mut command = Command::new("perf");
+
+    // Set up the environment for the command
     command
-        .arg("stat")
-        .arg("--append")
-        .arg("-o")
-        .arg(perf_output_file_path)
-        .arg("-e")
-        .arg(measures)
-        .arg("-x;") // Output all on one line separated by comma
-        .arg("-C")
-        .arg(CPU.to_string()) // measure core CPU
-        .arg("-I1000")
-        // Common values for each specific project
         .env("CARGO_PROFILE_BENCH_LTO", "no") // Debug info is stripped if LTO is on
         .env("CARGO_PROFILE_BENCH_DEBUG", "true") // Probe requires debuginfo
-        .current_dir(get_workdir_for_project(&benchmark.project)) // Work in the project directory
-        // Command for perf to execute come after this
-        .arg("--")
-        // Taskset - run on certain core
-        // Run the following on core CPU
-        .arg("taskset")
-        .arg("-c")
-        .arg(CPU.to_string())
+        .current_dir(get_workdir_for_project(&benchmark.project)); // Work in the project directory
+
+    // Configure perf
+    command
+        .arg("stat")
+        .arg("--append").arg("-o").arg(perf_output_file_path)// Append to the file for this benchmark
+        .arg("-e").arg(events)// The list of events we want to collect
+        .arg("-x;") // Output all on one line separated by comma
+        .arg("-C").arg(cpu.to_string()) // measure core CPU
+        .arg("-I1000")// Output every one second
+        .arg("--"); // Command for perf to execute come after this
+
+
+    // Taskset - run on the specified core
+    command
+        .arg("taskset").arg("--cpu-list").arg(cpu.to_string())
+
         // Nice process affinity
         // Run the process with the highest priority
-        .arg("nice")
-        .arg("-n")
-        .arg("-19")
+        .arg("nice").arg("-n").arg("-19")
+
         // Cargo bench command
         .arg("cargo")
         .arg("bench")
@@ -253,17 +270,16 @@ fn create_command_for_bench(benchmark: &Benchmark) -> Command {
 
     // Commands to criterion
     command
-        .arg("--")
-        .arg("--profile-time")
-        .arg(PROFILE_TIME.to_string())
+        .arg("--")// The commands after -- get sent to the criterion framework
+        .arg("--profile-time").arg(profile_time.to_string())
         // Last argument of criterion is <filter>, which acts as a regex.
         // This way we match and only match the benchmark we want
         .arg(format!("^{}$", &benchmark.id));
 
-    command
+    command // Return the command
 }
 
-fn do_new_iteration(benchmark: &Benchmark, cmd: &mut Command) {
+fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command) {
     println!(
         "Running project: {}, benchmark: {}, id: {} at {}",
         &benchmark.project,
@@ -273,10 +289,6 @@ fn do_new_iteration(benchmark: &Benchmark, cmd: &mut Command) {
     );
     println!("{:?}", cmd);
     let output = cmd.output().unwrap();
-    // writeln!("{:?}", output.stderr);
-    // println!("{:?}", output.stdout);
-    println!("{}", std::str::from_utf8(&*output.stderr).unwrap());
-
     let status = output.status;
     println!("{}", status);
 }
@@ -289,7 +301,7 @@ fn cargo_clean_project(project: &str) -> () {
         .unwrap();
 }
 
-fn compile_benchmark_file(benchmark: &BenchFile) -> String {
+pub fn compile_benchmark_file(benchmark: &BenchFile) -> String {
     println!(
         "Compiling {} in {}",
         benchmark.name,
@@ -319,7 +331,12 @@ fn compile_benchmark_file(benchmark: &BenchFile) -> String {
     let regex = Regex::new(r"Executable .*? \((.*?target/release/deps/[\w_-]+)\)").unwrap();
     let mut string = String::new();
     let mut matches = regex.captures_iter(&output);
-    string.push_str(&matches.next().unwrap()[1]);
+    let next = matches.next();
+    if next.is_some() {
+        string.push_str(&next.unwrap()[1]);
+    } else {
+        println!("{}", output);
+    }
 
     string
 }

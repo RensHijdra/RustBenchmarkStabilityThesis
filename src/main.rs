@@ -99,3 +99,40 @@
 //         );
 //     }
 // }
+use clap::Parser;
+
+mod collect;
+mod project;
+mod stats;
+mod parse;
+mod probe;
+
+#[derive(Parser, Debug)] // requires `derive` feature
+#[command(name = "power")]
+#[command(bin_name = "power")]
+enum Cli {
+    #[command(name = "run")]
+    RunExperiment(ExperimentSettings),
+}
+
+#[derive(clap::Args, Debug)]
+#[command(author, version, about, long_about = None)]
+struct ExperimentSettings {
+    #[arg(short, default_value = "30")]
+    iterations: usize,
+
+    #[arg(short = 't',long, default_value = "30")]
+    profile_time: u64,
+
+    #[arg(short, long, default_value = "1")]
+    cpu: usize
+
+}
+
+fn main() {
+    let parse = Cli::parse();
+    println!("{:?}", parse);
+    match parse { Cli::RunExperiment(settings) => {
+        collect::run(settings.iterations, settings.profile_time, settings.cpu)
+    } }
+}

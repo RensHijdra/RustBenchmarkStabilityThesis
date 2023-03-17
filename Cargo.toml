@@ -2,6 +2,7 @@
 name = "scrape-crates"
 version = "0.1.0"
 edition = "2021"
+default-run = "scrape-crates"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -43,3 +44,4 @@ ra_ap_paths = "0.0.149"
 ra_ap_vfs = "0.0.149"
 ra_ap_ide = "0.0.149"
 ra_ap_syntax = "0.0.149"
+clap = { version = "4.1.8", features = ["derive"] }
