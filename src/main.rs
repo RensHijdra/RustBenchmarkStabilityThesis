@@ -132,7 +132,7 @@ struct ExperimentSettings {
     cpu: usize,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(clap::Subcommand, Debug)]
 enum ProjectCommand {
     Parse,
     Download,
