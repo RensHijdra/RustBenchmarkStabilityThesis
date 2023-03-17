@@ -2,21 +2,8 @@
 name = "scrape-crates"
 version = "0.1.0"
 edition = "2021"
-default-run = "scrape-crates"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[[bin]]
-name = 'stats'
-path = 'src/stats.rs'
-
-[[bin]]
-name = 'collect'
-path = 'src/collect.rs'
-
-[[bin]]
-name = 'parse'
-path = 'src/parse.rs'
 
 [dependencies]
 crates_io_api = { version = "0.8.1", default-features = false, features = ["rustls"] }
