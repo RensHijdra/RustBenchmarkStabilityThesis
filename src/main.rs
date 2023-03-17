@@ -101,7 +101,7 @@ use std::process::Command;
 //     }
 // }
 use clap::Parser;
-use crate::project::{clone_projects_from_targets, read_target_projects};
+use crate::project::{clone_projects_from_targets};
 
 mod collect;
 mod project;
