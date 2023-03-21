@@ -211,11 +211,11 @@ pub fn create_command_for_bench(benchmark: &Benchmark, profile_time: u64, cpu: u
         "branch-misses",
         "cache-misses",
         "context-switches",
-        "r119", // Energy per core
-        "r19c", // Temperature IA32_THERMAL_STATUS register, bits 22:16 are temp in C
+        // "r119", // Energy per core
+        // "r19c", // Temperature IA32_THERMAL_STATUS register, bits 22:16 are temp in C
         "power/energy-pkg/",
-        "power/energy-ram/",
-        "mem-loads",
+        // "power/energy-ram/",
+        // "mem-loads", // Always 0
         &format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_project()),
     ]
         .join(",");
