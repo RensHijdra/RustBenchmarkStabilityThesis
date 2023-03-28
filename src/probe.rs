@@ -66,7 +66,7 @@ pub(crate) fn find_probe_addresses(project: &str, executable: &str) -> Vec<Strin
     lazy_static! {
         static ref SECTION_RE: Regex = Regex::new(r"self\.measurement\.start\(\);((?:.|\n)*?)self\.measurement.end\(start\);").unwrap();
         static ref ITER_NEXT_TARGET: Regex = Regex::new(r"([a-f0-9]*?):\s*(?:[a-f0-9]{2}\s)*\s+?j[a-z]{1,2}\s*[a-z0-9]+? <criterion::bencher::Bencher<M>::iter\+0x[a-f0-9]+>").unwrap();
-        static ref BATCHED_TARGET: Regex = Regex::new(r"[0-9a-f]+:\s+(?:[0-9a-f]{2}\s)+\s+[a-z]{2,4}\s+.+?,.+?\s+[0-9a-f]+:\s+(?:[0-9a-f]{2}\s)+\s+cmp\s+.+?,.+?\s+([[:xdigit:]]+):\s+(?:[0-9a-f]{2}\s)+\s+j[mpnegtlz]{1,2}\s+[0-9a-f]+\s+<criterion::bencher::Bencher<M>::iter_batched\+0").unwrap();
+        static ref BATCHED_TARGET: Regex = Regex::new(r"[0-9a-f]+:\s+(?:[0-9a-f]{2}\s)+\s+[a-z]{2,4}\s+.+?(?:.+?)?\s+[0-9a-f]+:\s+(?:[0-9a-f]{2}\s)+\s+cmp\s+.+?,.+?\s+([[:xdigit:]]+):\s+(?:[0-9a-f]{2}\s)+\s+j[mpnegtlz]{1,2}\s+[0-9a-f]+\s+").unwrap();
 
     }
 
@@ -86,6 +86,9 @@ pub(crate) fn find_probe_addresses(project: &str, executable: &str) -> Vec<Strin
         if option.is_some() {
             addresses.push(option.unwrap()[1].to_string())
         }
+
+
+
         // else {
         // println!("$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
         // println!("{}", iter_section);

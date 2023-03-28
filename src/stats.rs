@@ -53,9 +53,11 @@ struct Statistic {
 
 fn stats_for_project(project: &str) {
     let mut wtr = csv::WriterBuilder::new().has_headers(false).from_writer(std::io::stdout());
-
-    for benchmark_dir_entry in fs::read_dir(format!("data/{}", project))
-        .expect(&format!("Could not find project {} in data/", project))
+    let result = fs::read_dir(format!("data/{}", project));
+    if result.is_err(){
+        return;
+    }
+    for benchmark_dir_entry in result.unwrap()
     {
         if let Ok(benchmark_dir) = benchmark_dir_entry {
             for bench_file_entry in benchmark_dir.path().read_dir().unwrap() {
@@ -92,7 +94,7 @@ fn stats_for_project(project: &str) {
                         .filter(|(_, v)| v.iter().map(|v| v.value).sum::<f64>() != 0.0)
                         .collect::<Vec<(&String, &Vec<Datapoint>)>>();
                     if x.len() == 0 {
-                        break;
+                        // break;
                         println!(
                             "{}/{:?}/{:?}",
                             project,
@@ -100,27 +102,27 @@ fn stats_for_project(project: &str) {
                             benchmark_file.file_name()
                         );
                     }
-                    for key in hash_map.keys() {
-                        // if key.starts_with("probe_") {
-                            let option = hash_map.get(key);
-                            if option.is_some(){
-                                let mut vec: Vec<f64>;
-                                if key == "cpu_core/r19c/" {
-                                    //
-                                    vec = option.unwrap().iter().map(|p| ((p.value as u64) << 14 >> 22) as f64).collect::<Vec<f64>>()
-                                } else {
-                                vec = option.unwrap().iter().map(|p| p.value).collect::<Vec<f64>>();
-                                }
-
-                                let statistic = data_to_statistics(project, benchmark_dir.file_name().to_str().unwrap(), benchmark_file.file_name().to_str().unwrap(), key,&mut vec);
-                                // if statistic.min == 0.0 && statistic.max == 0.0 {
-                                //     break;
-                                // }
-
-                                wtr.serialize(statistic);
-                            }
-                        // }
-                    }
+                    // for key in hash_map.keys() {
+                    //     // if key.starts_with("probe_") {
+                    //         let option = hash_map.get(key);
+                    //         if option.is_some(){
+                    //             let mut vec: Vec<f64>;
+                    //             if key == "cpu_core/r19c/" {
+                    //                 //
+                    //                 vec = option.unwrap().iter().map(|p| ((p.value as u64) << 14 >> 22) as f64).collect::<Vec<f64>>()
+                    //             } else {
+                    //             vec = option.unwrap().iter().map(|p| p.value).collect::<Vec<f64>>();
+                    //             }
+                    //
+                    //             let statistic = data_to_statistics(project, benchmark_dir.file_name().to_str().unwrap(), benchmark_file.file_name().to_str().unwrap(), key,&mut vec);
+                    //             // if statistic.min == 0.0 && statistic.max == 0.0 {
+                    //             //     break;
+                    //             // }
+                    //
+                    //             wtr.serialize(statistic);
+                    //         }
+                    //     // }
+                    // }
                     // let output = data_to_statistics(&mut data);
                     // println!("{:?}", output);
                 }
