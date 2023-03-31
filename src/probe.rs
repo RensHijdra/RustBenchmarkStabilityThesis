@@ -1,10 +1,11 @@
 #![allow(unused_imports)]
 
+use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
 
 use crate::project::{find_benchmarks_for_project, get_workdir_for_project, BenchFile, Project};
-use crate::collect::{compile_benchmark_file, create_command_for_bench, Benchmark};
+use crate::collect::{compile_benchmark_file, create_command_for_bench, Benchmark, create_tmp_file};
 use lazy_static::lazy_static;
 use ra_ap_hir::known::str;
 use regex::Regex;
@@ -158,7 +159,7 @@ fn run_test_with_probes() {
                 bench.features.clone(),
             );
             println!("{}", bench_method);
-            let mut command = create_command_for_bench(&benchmark, 1, 1);
+            let mut command = create_command_for_bench(&benchmark, &exe, 1, 1, create_tmp_file().as_raw_fd());
             println!("{:?}", command);
             let output = command.output().unwrap();
             println!("{}", std::str::from_utf8(&*output.stderr).unwrap());

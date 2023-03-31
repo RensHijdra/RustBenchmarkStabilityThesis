@@ -295,4 +295,31 @@ fn test_harreldavis() {
     assert_almost_eq!(a.hd(0.5), 271.72120054908913, 0.00000001);
 }
 
+#[test]
+fn test_profdata() {
+    use linux_perf_data::{AttributeDescription, PerfFileReader, PerfFileRecord};
+
+    let file = std::fs::File::open("perf.data").unwrap();
+    let reader = std::io::BufReader::new(file);
+    let PerfFileReader { mut perf_file, mut record_iter } = PerfFileReader::parse_file(reader).unwrap();
+    let event_names: Vec<_> =
+        perf_file.event_attributes().iter().filter_map(AttributeDescription::name).collect();
+    println!("perf events: {}", event_names.join(", "));
+
+    while let Some(record) = record_iter.next_record(&mut perf_file).unwrap() {
+        match record {
+            PerfFileRecord::EventRecord { attr_index, record } => {
+                let record_type = record.record_type;
+                let parsed_record = record.parse().unwrap();
+                println!("{:?} for event {}: {:?}", record_type, attr_index, parsed_record);
+            }
+            PerfFileRecord::UserRecord(record) => {
+                let record_type = record.record_type;
+                let parsed_record = record.parse().unwrap();
+                println!("{:?}: {:?}", record_type, parsed_record);
+            }
+        }
+    }
+}
+
 fn main() {}

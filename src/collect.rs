@@ -1,13 +1,17 @@
 #![allow(unused)]
 
 use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::ops::Add;
+use std::os::unix::io::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::{Rng, thread_rng};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use crate::probe::{create_named_probe_for_adresses, delete_probe, find_probe_addresses};
@@ -75,6 +79,7 @@ pub struct Benchmark {
     features: Vec<String>,
 }
 
+
 impl Benchmark {
     fn to_path_buf(&self) -> PathBuf {
         Path::new(&self.project.replace(" ", "_").replace("/", "_"))
@@ -127,7 +132,7 @@ fn write_vec() {
 }
 
 fn main() {
-    do_one_iteration(1, 1);
+    do_one_iteration(1, 1, 1);
     // do_one_iteration();
     // do_one_iteration();
     // do_one_iteration();
@@ -135,16 +140,15 @@ fn main() {
 }
 
 
-pub fn run(iterations: usize, profile_time: u64, cpu: usize) {
-
+pub fn run(repetitions: usize, iterations: usize, profile_time: u64, cpu: usize) {
 
     for _ in 0..iterations {
-        do_one_iteration(profile_time, cpu);
+        do_one_iteration(repetitions,profile_time, cpu);
     }
 }
 
 
-fn do_one_iteration(profile_time: u64, cpu: usize) {
+fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
 
     // Remove all artifacts
     for record in read_target_projects() {
@@ -154,6 +158,9 @@ fn do_one_iteration(profile_time: u64, cpu: usize) {
 
     let mut run_requests: Vec<(Benchmark, Command)> = Default::default();
     let mut existing_probes: Vec<String> = vec![];
+
+    let file = create_tmp_file();
+    let fd = file.as_raw_fd();
 
     for record in read_target_projects() {
         println!("{:?}", record);
@@ -185,7 +192,7 @@ fn do_one_iteration(profile_time: u64, cpu: usize) {
                     features: group.features.clone(),
                 };
 
-                let command = create_command_for_bench(&bench, profile_time, cpu);
+                let command = create_command_for_bench(&bench, &executable, profile_time, cpu, fd);
                 run_requests.push((bench, command));
             }
         }
@@ -202,7 +209,16 @@ fn do_one_iteration(profile_time: u64, cpu: usize) {
     }
 }
 
-pub fn create_command_for_bench(benchmark: &Benchmark, profile_time: u64, cpu: usize) -> Command {
+pub fn create_tmp_file() -> File {
+    // Generate a random id for this temporary file
+    let mut uuid: u128 = 0;
+    thread_rng().fill(&mut [uuid]);
+    let file = File::create(format!("/tmp/perf-control-{:x}", uuid)).unwrap();
+    file
+}
+
+pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile_time: u64, cpu: usize, fd: RawFd) -> Command {
+
     let events: String = vec![
         "duration_time",
         "cycles",
@@ -213,7 +229,7 @@ pub fn create_command_for_bench(benchmark: &Benchmark, profile_time: u64, cpu: u
         "context-switches",
         // "r119", // Energy per core
         // "r19c", // Temperature IA32_THERMAL_STATUS register, bits 22:16 are temp in C
-        "power/energy-pkg/",
+        // "power/energy-pkg/",
         // "power/energy-ram/",
         // "mem-loads", // Always 0
         &format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_project()),
@@ -231,51 +247,35 @@ pub fn create_command_for_bench(benchmark: &Benchmark, profile_time: u64, cpu: u
         .to_string();
     fs::create_dir_all(Path::new(&perf_output_file_path).parent().unwrap());
 
-    let mut command = Command::new("perf");
+    let workdir_path = get_workdir_for_project(&benchmark.project);
+    let benchmark_id = &benchmark.id;
+    let target_executable = format!("\"{executable}\" \"--bench\" \"--profile-time\" \"{profile_time}\" \"^{benchmark_id}\\$\"");
+    let rdmsr = format!("\"rdmsr\" \"-d\" \"0xc001029a\"");
+    let enable = format!("\"echo\" \"enable\" \">&{fd}\"");
+    let disable = format!("\"echo\" \"disable\" \">&{fd}\"");
 
-    // Set up the environment for the command
-    command
-        .env("CARGO_PROFILE_BENCH_LTO", "no") // Debug info is stripped if LTO is on
-        .env("CARGO_PROFILE_BENCH_DEBUG", "true") // Probe requires debuginfo
-        .current_dir(get_workdir_for_project(&benchmark.project)); // Work in the project directory
+    let mut command = Command::new("perf");
 
     // Configure perf
     command
-        .arg("stat")
-        .arg("--append").arg("-o").arg(perf_output_file_path)// Append to the file for this benchmark
+        .arg("record")
+        // .arg("--append").arg("-o").arg(perf_output_file_path)// Append to the file for this benchmark
         .arg("-e").arg(events)// The list of events we want to collect
-        .arg("-x;") // Output all on one line separated by comma
+        // .arg("-x;") // Output all on one line separated by comma
         .arg("-C").arg(cpu.to_string()) // measure core CPU
-        .arg("-I1000")// Output every one second
-        .arg("--"); // Command for perf to execute come after this
+        .arg(format!("--control=fd:{fd}"))
+        // .arg("-I1000")// Output every one second
+        .arg("--") // Command for perf to execute come after this
 
-
-    // Taskset - run on the specified core
-    command
+        // Taskset - run on the specified core
         .arg("taskset").arg("--cpu-list").arg(cpu.to_string())
 
         // Nice process affinity
         // Run the process with the highest priority
         .arg("nice").arg("-n").arg("-19")
 
-        // Cargo bench command
-        .arg("cargo")
-        .arg("bench")
-        .arg("--bench")
-        .arg(&benchmark.benchmark);
-
-    // Add cargo features if applicable
-    if benchmark.features.len() > 0 {
-        command.arg("--features").arg(&benchmark.features.join(","));
-    }
-
-    // Commands to criterion
-    command
-        .arg("--")// The commands after -- get sent to the criterion framework
-        .arg("--profile-time").arg(profile_time.to_string())
-        // Last argument of criterion is <filter>, which acts as a regex.
-        // This way we match and only match the benchmark we want
-        .arg(format!("^{}$", &benchmark.id));
+        .arg("bash").arg("-c") // Execute the following multiple commands in a shell
+        .arg(format!("{rdmsr};{enable};{target_executable};{disable};{rdmsr}"));
 
     command // Return the command
 }

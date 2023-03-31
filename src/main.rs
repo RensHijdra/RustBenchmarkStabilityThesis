@@ -125,6 +125,9 @@ struct ExperimentSettings {
     #[arg(short, default_value = "30")]
     iterations: usize,
 
+    #[arg(short, long, default_value = "30")]
+    repetitions: usize,
+
     #[arg(short = 't', long, default_value = "30")]
     profile_time: u64,
 
@@ -143,7 +146,7 @@ fn main() {
     println!("{:?}", parse);
     match parse {
         Cli::RunExperiment(settings) => {
-            collect::run(settings.iterations, settings.profile_time, settings.cpu)
+            collect::run(settings.repetitions, settings.iterations, settings.profile_time, settings.cpu)
         }
         Cli::Project(subcommand) => {
             match subcommand {
