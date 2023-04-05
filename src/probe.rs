@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 
+use std::fs;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
@@ -7,8 +8,43 @@ use std::process::Command;
 use crate::project::{find_benchmarks_for_project, get_workdir_for_project, BenchFile, Project};
 use crate::collect::{compile_benchmark_file, create_command_for_bench, Benchmark, create_tmp_file};
 use lazy_static::lazy_static;
-use ra_ap_hir::known::str;
+use ra_ap_hir::known::{assert, str};
 use regex::Regex;
+
+
+fn find_mangled_functions(executable_path: &str) -> Vec<String> {
+    lazy_static! {
+        static ref RE_MANGLED_FUNCS: Regex = Regex::new(r"(?m)^[[:xdigit:]]*\st\s(.*Bencher.+iter.*)$").unwrap();
+    }
+
+    let vec = Command::new("nm").arg("-a").arg(executable_path).output().unwrap().stdout;
+    let output = String::from_utf8(vec).unwrap();
+
+    RE_MANGLED_FUNCS.captures_iter(&output).map(|capture| String::from(&capture[1])).collect()
+}
+
+#[test]
+fn test_find_mangled_functions() {
+    let project = Project::load("ahash").unwrap();
+    let bench = project.bench_files.iter().filter(|p| p.name == "ahash").next().expect("Are the projects loaded?");
+    let exe = compile_benchmark_file(&bench);
+    let mangled_functions = find_mangled_functions(&exe);
+    println!("{:?}", mangled_functions);
+    println!("{}", mangled_functions.len());
+    assert!(mangled_functions.len() > 0);
+}
+
+fn create_probe_for_mangled_functions(function_names: &Vec<String>, executable: &str, bench: &BenchFile) -> bool {
+    function_names.iter().map(|function| {
+        Command::new("perf")
+            .current_dir(get_workdir_for_project(&bench.project))
+            .arg("probe")
+            .arg("-f") // Force probes with the same name
+            .arg("-x").arg(executable)
+            .arg("--add").arg(format!("{}={} self->iters", bench.name, function))
+            .status().unwrap()
+    }).all(|status| status.success())
+}
 
 pub(crate) fn create_named_probe_for_adresses(
     name: &str,
@@ -89,7 +125,6 @@ pub(crate) fn find_probe_addresses(project: &str, executable: &str) -> Vec<Strin
         }
 
 
-
         // else {
         // println!("$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
         // println!("{}", iter_section);
@@ -141,15 +176,26 @@ fn create_probe_for_executable() {
 }
 
 #[test]
+fn run_test_mangled_function_probe(){
+    let project = Project::load("chrono").unwrap();
+    for bench in project.bench_files {
+        let exe = compile_benchmark_file(&bench);
+        let functions = find_mangled_functions(&exe);
+        println!("{:?}", functions);
+        let status = create_probe_for_mangled_functions(&functions, &exe, &bench);
+        assert!(status);
+    }
+}
+
+#[test]
 fn run_test_with_probes() {
-    let project = Project::load("ahash").unwrap();
+    let project = Project::load("chrono").unwrap();
     for bench in project.bench_files {
         let exe = compile_benchmark_file(&bench);
         println!("{}", exe);
-        let probe_addresses = find_probe_addresses(&project.name, &exe);
-        println!("Addresses: {:?}", probe_addresses);
-        let string =
-            create_named_probe_for_adresses(&bench.project.replace("-", "_"), &project.name, &exe, probe_addresses);
+        let functions = find_mangled_functions(&exe);
+        println!("{:?}", functions);
+        let status = create_probe_for_mangled_functions(&functions, &exe, &bench);
         for bench_method in bench.benches {
             let benchmark = Benchmark::new(
                 project.name.clone(),
@@ -159,7 +205,7 @@ fn run_test_with_probes() {
                 bench.features.clone(),
             );
             println!("{}", bench_method);
-            let mut command = create_command_for_bench(&benchmark, &exe, 1, 1, create_tmp_file().as_raw_fd());
+            let mut command = create_command_for_bench(&benchmark, &exe, 2, 1, create_tmp_file().as_raw_fd());
             println!("{:?}", command);
             let output = command.output().unwrap();
             println!("{}", std::str::from_utf8(&*output.stderr).unwrap());

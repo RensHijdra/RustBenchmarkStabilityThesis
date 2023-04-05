@@ -220,23 +220,23 @@ pub fn create_tmp_file() -> File {
 pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile_time: u64, cpu: usize, fd: RawFd) -> Command {
 
     let events: String = vec![
+        format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_project()).as_str(),
         "duration_time",
         "cycles",
         "instructions",
         "branches",
         "branch-misses",
         "cache-misses",
-        "context-switches",
+        "context-switches"
         // "r119", // Energy per core
         // "r19c", // Temperature IA32_THERMAL_STATUS register, bits 22:16 are temp in C
         // "power/energy-pkg/",
         // "power/energy-ram/",
         // "mem-loads", // Always 0
-        &format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_project()),
     ]
         .join(",");
 
-    let perf_output_file = format!("{}.csv", benchmark.get_clean_id());
+    let perf_output_file = format!("{}.profraw", benchmark.get_clean_id());
     let perf_output_file_path = Path::new(&std::env::current_dir().unwrap())
         .join("data")
         .join(&benchmark.get_clean_project())
@@ -247,24 +247,33 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
         .to_string();
     fs::create_dir_all(Path::new(&perf_output_file_path).parent().unwrap());
 
+    let file = create_tmp_file();
+
+    let fd = file.as_raw_fd();
+
     let workdir_path = get_workdir_for_project(&benchmark.project);
     let benchmark_id = &benchmark.id;
     let target_executable = format!("\"{executable}\" \"--bench\" \"--profile-time\" \"{profile_time}\" \"^{benchmark_id}\\$\"");
-    let rdmsr = format!("\"rdmsr\" \"-d\" \"0xc001029a\"");
-    let enable = format!("\"echo\" \"enable\" \">&{fd}\"");
-    let disable = format!("\"echo\" \"disable\" \">&{fd}\"");
+    // let create_fd = String::from("\"exec 89< /tmp/perf.fifo\"");
+    let rdmsr = String::from("\"rdmsr\" \"-d\" \"0xc001029a\"");
+    let enable = "\"echo\" \"enable\" | \"tee\" \"/tmp/perf.fifo\"";
+    let disable ="\"echo\" \"disable\" | \"tee\" \"/tmp/perf.fifo\"";
+
+    // Command::new("exec").arg("{ctl_fd}<>/tmp/perf-control.pipe").arg(";").
 
     let mut command = Command::new("perf");
 
     // Configure perf
     command
         .arg("record")
-        // .arg("--append").arg("-o").arg(perf_output_file_path)// Append to the file for this benchmark
-        .arg("-e").arg(events)// The list of events we want to collect
-        // .arg("-x;") // Output all on one line separated by comma
+        // TODO add output location
+        // TODO add quiet perf to read
+        .arg("-o").arg(perf_output_file_path)// Append to the file for this benchmark
+        .arg("-e").arg(format!("{{{events}}}:S"))// The list of events we want to collect
+        .arg("-D").arg("-1") // Start with events disabled
         .arg("-C").arg(cpu.to_string()) // measure core CPU
-        .arg(format!("--control=fd:{fd}"))
-        // .arg("-I1000")// Output every one second
+        // .arg("--control").arg("fd:`exec {fd}<>/tmp/perf.fifo; echo ${fd}`")
+        .arg("--control").arg("fifo:/tmp/perf.fifo")
         .arg("--") // Command for perf to execute come after this
 
         // Taskset - run on the specified core
@@ -274,10 +283,15 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
         // Run the process with the highest priority
         .arg("nice").arg("-n").arg("-19")
 
-        .arg("bash").arg("-c") // Execute the following multiple commands in a shell
+        // Execute the following multiple commands in a shell
+        .arg("bash").arg("-c")
         .arg(format!("{rdmsr};{enable};{target_executable};{disable};{rdmsr}"));
 
-    command // Return the command
+    // command // Return the command
+
+    let mut bash = Command::new("bash");
+    bash.arg("-c").arg(format!("{command:?}"));
+    bash
 }
 
 fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command) {
@@ -311,10 +325,12 @@ pub fn compile_benchmark_file(benchmark: &BenchFile) -> String {
     let mut cargo = Command::new("cargo");
 
     cargo
+        .arg("+nightly")
         .arg("bench") // cargo bench
         .current_dir(get_workdir_for_project(&benchmark.project).join(benchmark.get_workdir())) // TODO get this from benchmark
         .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
         .env("CARGO_PROFILE_BENCH_LTO", "no") // Debug info is stripped if LTO is on
+        .env("RUSTFLAGS","-Csymbol-mangling-version=v0")
         .arg("--bench")
         .arg(&benchmark.name)
         .arg("--no-run");
