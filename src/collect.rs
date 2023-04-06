@@ -303,11 +303,11 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
 
 fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command) {
     println!(
-        "Running project: {}, benchmark: {}, id: {} at {}",
+        "Running project: {}, benchmark: {}, id: {} at {:?}",
         &benchmark.project,
         &benchmark.benchmark,
         &benchmark.id,
-        cmd.get_current_dir().unwrap().to_str().unwrap()
+        cmd.get_current_dir()
     );
     println!("{:?}", cmd);
     let output = cmd.output().unwrap();
