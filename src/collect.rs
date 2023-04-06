@@ -15,7 +15,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, thread_rng};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use crate::probe::{create_named_probe_for_adresses, delete_probe, find_probe_addresses};
+use crate::probe::{create_named_probe_for_adresses, create_probe_for_mangled_functions, delete_probe, find_mangled_functions, find_probe_addresses};
 use crate::project::{BenchFile, get_workdir_for_project, Project, read_target_projects, TargetProject};
 
 
@@ -174,14 +174,10 @@ fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
             // Compile and save the executable
             let executable = compile_benchmark_file(&group);
 
-            // Create probes
-            let probe_addresses = find_probe_addresses(&project.name, &executable);
-            create_named_probe_for_adresses(
-                &project.clean_name(),
-                &project.name,
-                &executable,
-                probe_addresses,
-            );
+
+            let functions = find_mangled_functions(&executable);
+            let status = create_probe_for_mangled_functions(&functions, &executable, &group);
+
             existing_probes.push(group.get_clean_name());
 
             for bench_id in group.benches.iter() {

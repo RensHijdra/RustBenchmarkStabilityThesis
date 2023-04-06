@@ -12,7 +12,7 @@ use ra_ap_hir::known::{assert, str};
 use regex::Regex;
 
 
-fn find_mangled_functions(executable_path: &str) -> Vec<String> {
+pub(crate) fn find_mangled_functions(executable_path: &str) -> Vec<String> {
     lazy_static! {
         static ref RE_MANGLED_FUNCS: Regex = Regex::new(r"(?m)^[[:xdigit:]]*\st\s(.*Bencher.+iter.*)$").unwrap();
     }
@@ -34,7 +34,7 @@ fn test_find_mangled_functions() {
     assert!(mangled_functions.len() > 0);
 }
 
-fn create_probe_for_mangled_functions(function_names: &Vec<String>, executable: &str, bench: &BenchFile) -> bool {
+pub(crate) fn create_probe_for_mangled_functions(function_names: &Vec<String>, executable: &str, bench: &BenchFile) -> bool {
     function_names.iter().map(|function| {
         Command::new("perf")
             .current_dir(get_workdir_for_project(&bench.project))
