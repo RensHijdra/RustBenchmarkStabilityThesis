@@ -7,6 +7,7 @@ use std::ops::Add;
 use std::os::unix::io::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -235,13 +236,22 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
         // "mem-loads", // Always 0
     ]
         .join(",");
-
-    let perf_output_file = format!("{}.profraw", benchmark.get_clean_id());
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
+    let perf_output_file = format!("{}_{}.profraw", benchmark.get_clean_id(), ts);
+    let msr_output_file = format!("{}_{}.txt", benchmark.get_clean_id(), ts);
     let perf_output_file_path = Path::new(&std::env::current_dir().unwrap())
         .join("data")
         .join(&benchmark.get_clean_project())
         .join(benchmark.get_clean_benchmark())
         .join(perf_output_file)
+        .to_str()
+        .unwrap()
+        .to_string();
+    let msr_output_file_path = Path::new(&std::env::current_dir().unwrap())
+        .join("data")
+        .join(&benchmark.get_clean_project())
+        .join(benchmark.get_clean_benchmark())
+        .join(msr_output_file)
         .to_str()
         .unwrap()
         .to_string();
@@ -255,7 +265,7 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
     let benchmark_id = &benchmark.id;
     let target_executable = format!("\"{executable}\" \"--bench\" \"--profile-time\" \"{profile_time}\" \"^{benchmark_id}\\$\"");
     // let create_fd = String::from("\"exec 89< /tmp/perf.fifo\"");
-    let rdmsr = String::from("\"rdmsr\" \"-d\" \"0xc001029a\"");
+    let rdmsr = format!("\"rdmsr\" \"-d\" \"0xc001029a\" | \"tee\" \"-a\" \"{msr_output_file_path}\"");
     let enable = "\"echo\" \"enable\" | \"tee\" \"/tmp/perf.fifo\"";
     let disable ="\"echo\" \"disable\" | \"tee\" \"/tmp/perf.fifo\"";
 
@@ -268,6 +278,7 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
         .arg("record")
         // TODO add output location
         // TODO add quiet perf to read
+        // TODO! add collecting rdmsr data
         .arg("-o").arg(perf_output_file_path)// Append to the file for this benchmark
         .arg("-e").arg(format!("{{{events}}}:S"))// The list of events we want to collect
         .arg("-D").arg("-1") // Start with events disabled
