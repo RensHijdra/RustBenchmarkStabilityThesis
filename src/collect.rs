@@ -294,11 +294,11 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
         .arg("bash").arg("-c")
         .arg(format!("{rdmsr};{enable};{target_executable};{disable};{rdmsr}"));
 
-    // command // Return the command
+    command // Return the command
 
-    let mut bash = Command::new("bash");
-    bash.arg("-c").arg(format!("{command:?}"));
-    bash
+    // let mut bash = Command::new("bash");
+    // bash.arg("-c").arg(format!("{command:?}"));
+    // bash
 }
 
 fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command) {
