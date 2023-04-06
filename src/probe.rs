@@ -41,7 +41,7 @@ pub(crate) fn create_probe_for_mangled_functions(function_names: &Vec<String>, e
             .arg("probe")
             .arg("-f") // Force probes with the same name
             .arg("-x").arg(executable)
-            .arg("--add").arg(format!("{}={} self->iters", bench.name, function))
+            .arg("--add").arg(format!("{}={} self->iters", bench.get_clean_name(), function))
             .status().unwrap()
     }).all(|status| status.success())
 }
