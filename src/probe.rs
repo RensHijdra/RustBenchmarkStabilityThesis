@@ -189,7 +189,7 @@ fn run_test_mangled_function_probe(){
 
 #[test]
 fn run_test_with_probes() {
-    let project = Project::load("chrono").unwrap();
+    let project = Project::load("thread_local-rs").unwrap();
     for bench in project.bench_files {
         let exe = compile_benchmark_file(&bench);
         println!("{}", exe);

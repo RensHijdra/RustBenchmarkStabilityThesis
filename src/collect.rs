@@ -217,7 +217,7 @@ pub fn create_tmp_file() -> File {
 pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile_time: u64, cpu: usize, fd: RawFd) -> Command {
 
     let events: String = vec![
-        format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_project()).as_str(),
+        format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_benchmark()).as_str(),
         "duration_time",
         "cycles",
         "instructions",
