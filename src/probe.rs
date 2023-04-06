@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 
 use std::fs;
+use std::os::linux::raw::stat;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
@@ -36,13 +37,25 @@ fn test_find_mangled_functions() {
 
 pub(crate) fn create_probe_for_mangled_functions(function_names: &Vec<String>, executable: &str, bench: &BenchFile) -> bool {
     function_names.iter().map(|function| {
-        Command::new("perf")
+        let result = Command::new("perf")
             .current_dir(get_workdir_for_project(&bench.project))
             .arg("probe")
             .arg("-f") // Force probes with the same name
             .arg("-x").arg(executable)
             .arg("--add").arg(format!("{}={} self->iters", bench.get_clean_name(), function))
-            .status().unwrap()
+            .status();
+        if result.is_err() {
+            // Some versions require iters to be accessed by . instead of ->
+            Command::new("perf")
+                .current_dir(get_workdir_for_project(&bench.project))
+                .arg("probe")
+                .arg("-f") // Force probes with the same name
+                .arg("-x").arg(executable)
+                .arg("--add").arg(format!("{}={} self.iters", bench.get_clean_name(), function))
+                .status().unwrap()
+        } else {
+            return result.unwrap()
+        }
     }).all(|status| status.success())
 }
 
@@ -189,7 +202,7 @@ fn run_test_mangled_function_probe(){
 
 #[test]
 fn run_test_with_probes() {
-    let project = Project::load("thread_local-rs").unwrap();
+    let project = Project::load("chrono").unwrap();
     for bench in project.bench_files {
         let exe = compile_benchmark_file(&bench);
         println!("{}", exe);
