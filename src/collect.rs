@@ -15,7 +15,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, thread_rng};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use crate::probe::{create_named_probe_for_adresses, create_probe_for_mangled_functions, delete_probe, find_mangled_functions, find_probe_addresses};
+use crate::probe::{create_probe_for_mangled_functions, delete_probe, find_mangled_functions};
 use crate::project::{BenchFile, get_workdir_for_project, Project, read_target_projects, TargetProject};
 
 
@@ -199,7 +199,7 @@ fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
 
     run_requests
         .iter_mut()
-        .for_each(|(b, c)| run_benchmark(b, c));
+        .for_each(|(b, c)| run_benchmark(b, c, repetitions));
 
     for probe in existing_probes {
         delete_probe(&format!("probe_{}:*", probe));
@@ -233,7 +233,7 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
     ]
         .join(",");
     let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
-    let perf_output_file = format!("{}_{}.profraw", benchmark.get_clean_id(), ts);
+    let perf_output_file = format!("{}.profraw", benchmark.get_clean_id());
     let msr_output_file = format!("{}_{}.txt", benchmark.get_clean_id(), ts);
     let perf_output_file_path = Path::new(&std::env::current_dir().unwrap())
         .join("data")
@@ -251,36 +251,31 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
         .to_str()
         .unwrap()
         .to_string();
+
     fs::create_dir_all(Path::new(&perf_output_file_path).parent().unwrap());
-
-    let file = create_tmp_file();
-
-    let fd = file.as_raw_fd();
 
     let workdir_path = get_workdir_for_project(&benchmark.project);
     let benchmark_id = &benchmark.id;
+
     let target_executable = format!("\"{executable}\" \"--bench\" \"--profile-time\" \"{profile_time}\" \"^{benchmark_id}\\$\"");
-    // let create_fd = String::from("\"exec 89< /tmp/perf.fifo\"");
     let rdmsr = format!("\"rdmsr\" \"-d\" \"0xc001029a\" | \"tee\" \"-a\" \"{msr_output_file_path}\"");
+    let date = format!("\"date\" \"+%s%3N\" | \"tee\" \"-a\" \"{msr_output_file_path}\"");
     let enable = "\"echo\" \"enable\" | \"tee\" \"/tmp/perf.fifo\"";
     let disable ="\"echo\" \"disable\" | \"tee\" \"/tmp/perf.fifo\"";
 
-    // Command::new("exec").arg("{ctl_fd}<>/tmp/perf-control.pipe").arg(";").
 
     let mut command = Command::new("perf");
 
     // Configure perf
     command
         .arg("record")
-        // TODO add output location
-        // TODO add quiet perf to read
-        // TODO! add collecting rdmsr data
         .arg("-o").arg(perf_output_file_path)// Append to the file for this benchmark
         .arg("-e").arg(format!("{{{events}}}:S"))// The list of events we want to collect
         .arg("-D").arg("-1") // Start with events disabled
-        .arg("-C").arg(cpu.to_string()) // measure core CPU
-        // .arg("--control").arg("fd:`exec {fd}<>/tmp/perf.fifo; echo ${fd}`")
-        .arg("--control").arg("fifo:/tmp/perf.fifo")
+        .arg("-C").arg(cpu.to_string()) // measure core [cpu]
+        .arg("--timestamp-boundary") // Add timestamp to first and last sample for matching with rdmsr
+        .arg("--timestamp-filename")// Append timestamp to output file name
+        .arg("--control").arg("fifo:/tmp/perf.fifo")// Set the control file for enable/disable commands
         .arg("--") // Command for perf to execute come after this
 
         // Taskset - run on the specified core
@@ -292,16 +287,13 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
 
         // Execute the following multiple commands in a shell
         .arg("bash").arg("-c")
-        .arg(format!("{rdmsr};{enable};{target_executable};{disable};{rdmsr}"));
+        .arg(format!("{date};{rdmsr};{enable};{target_executable};{disable};{rdmsr}"));
 
     command // Return the command
 
-    // let mut bash = Command::new("bash");
-    // bash.arg("-c").arg(format!("{command:?}"));
-    // bash
 }
 
-fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command) {
+fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command, repetitions: usize) {
     println!(
         "Running project: {}, benchmark: {}, id: {} at {:?}",
         &benchmark.project,
@@ -310,9 +302,11 @@ fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command) {
         cmd.get_current_dir()
     );
     println!("{:?}", cmd);
-    let output = cmd.output().unwrap();
-    let status = output.status;
-    println!("{}", status);
+    for _ in 0..repetitions {
+        let output = cmd.output().unwrap();
+        let status = output.status;
+        println!("{}", status);
+    }
 }
 
 fn cargo_clean_project(project: &str) -> () {
@@ -334,7 +328,7 @@ pub fn compile_benchmark_file(benchmark: &BenchFile) -> String {
     cargo
         .arg("+nightly")
         .arg("bench") // cargo bench
-        .current_dir(get_workdir_for_project(&benchmark.project).join(benchmark.get_workdir())) // TODO get this from benchmark
+        .current_dir(get_workdir_for_project(&benchmark.project).join(benchmark.get_workdir()))
         .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
         .env("CARGO_PROFILE_BENCH_LTO", "no") // Debug info is stripped if LTO is on
         .env("RUSTFLAGS","-Csymbol-mangling-version=v0")
