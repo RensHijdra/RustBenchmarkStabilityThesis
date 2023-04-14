@@ -258,7 +258,7 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
     let benchmark_id = &benchmark.id;
 
     let target_executable = format!("\"{executable}\" \"--bench\" \"--profile-time\" \"{profile_time}\" \"^{benchmark_id}\\$\"");
-    let rdmsr = format!("\"rdmsr\" \"-d\" \"0xc001029a\" | \"tee\" \"-a\" \"{msr_output_file_path}\"");
+    let rdmsr = format!("\"rdmsr\" \"-d\" \"0xc001029a\" \"-p\" \"{cpu}\" | \"tee\" \"-a\" \"{msr_output_file_path}\"");
     let date = format!("\"date\" \"+%s%3N\" | \"tee\" \"-a\" \"{msr_output_file_path}\"");
     let enable = "\"echo\" \"enable\" | \"tee\" \"/tmp/perf.fifo\"";
     let disable ="\"echo\" \"disable\" | \"tee\" \"/tmp/perf.fifo\"";
