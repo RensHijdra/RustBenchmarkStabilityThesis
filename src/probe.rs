@@ -14,7 +14,7 @@ use crate::project::{BenchFile, find_benchmarks_for_project, get_workdir_for_pro
 
 pub(crate) fn find_mangled_functions(executable_path: &str) -> Vec<String> {
     lazy_static! {
-        static ref RE_MANGLED_FUNCS: Regex = Regex::new(r"(?m)^[[:xdigit:]]*\st\s(.*Bencher.+?iter.*)$").unwrap();
+        static ref RE_MANGLED_FUNCS: Regex = Regex::new(r"(?m)^[[:xdigit:]]*\st\s(.*Bencher.{1,4}iter.*)$").unwrap();
     }
 
     let vec = Command::new("nm").arg("-a").arg(executable_path).output().unwrap().stdout;
@@ -44,13 +44,13 @@ pub(crate) fn create_probe_for_mangled_functions(function_names: &Vec<String>, e
             .arg("--add").arg(format!("{}={} self->iters", bench.get_clean_name(), function))
             .status();
         // function return probe
-        Command::new("perf")
-            // .current_dir(get_workdir_for_project(&bench.project))
-            .arg("probe")
-            .arg("-f") // Force probes with the same name
-            .arg("-x").arg(executable)
-            .arg("--add").arg(format!("{}={}%return", bench.get_clean_name(), function))
-            .status().unwrap();
+        // Command::new("perf")
+        //     // .current_dir(get_workdir_for_project(&bench.project))
+        //     .arg("probe")
+        //     .arg("-f") // Force probes with the same name
+        //     .arg("-x").arg(executable)
+        //     .arg("--add").arg(format!("{}={}%return", bench.get_clean_name(), function))
+        //     .status().unwrap();
 
         if result.is_err() {
             // Some versions require iters to be accessed by . instead of ->
