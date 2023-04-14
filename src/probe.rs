@@ -6,10 +6,13 @@ use std::path::Path;
 use std::process::Command;
 
 use lazy_static::lazy_static;
+use nix::sys::stat;
+use nix::unistd;
 use ra_ap_hir::known::{assert, str};
 use regex::Regex;
+use tempfile::tempdir;
 
-use crate::collect::{Benchmark, compile_benchmark_file, create_command_for_bench, create_tmp_file};
+use crate::collect::{Benchmark, compile_benchmark_file, create_command_for_bench};
 use crate::project::{BenchFile, find_benchmarks_for_project, get_workdir_for_project, Project};
 
 pub(crate) fn find_mangled_functions(executable_path: &str) -> Vec<String> {
@@ -92,6 +95,16 @@ fn run_test_mangled_function_probe() {
 #[test]
 fn run_test_with_probes() {
     let project = Project::load("chrono").unwrap();
+    let tmp_dir = tempdir().unwrap();
+    let fifo_path = tmp_dir.path().join("control.pipe");
+
+    // create new fifo and give read, write and execute rights to others
+    match unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXU) {
+        Ok(_) => println!("Created {:?}", fifo_path),
+        Err(err) => println!("Error creating fifo: {}", err),
+    }
+
+
     for bench in project.bench_files {
         let exe = compile_benchmark_file(&bench);
         println!("{}", exe);
@@ -107,7 +120,7 @@ fn run_test_with_probes() {
                 bench.features.clone(),
             );
             println!("{}", bench_method);
-            let mut command = create_command_for_bench(&benchmark, &exe, 2, 1, create_tmp_file().as_raw_fd());
+            let mut command = create_command_for_bench(&benchmark, &exe, 2, 1, fifo_path.to_str().unwrap());
             println!("{:?}", command);
             let output = command.output().unwrap();
             println!("{}", std::str::from_utf8(&*output.stderr).unwrap());

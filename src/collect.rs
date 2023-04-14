@@ -11,11 +11,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use nix::sys::stat;
 use nix::sys::stat::Mode;
+use nix::unistd;
 use rand::seq::SliceRandom;
 use rand::{Rng, thread_rng};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use tempfile::tempdir;
 use crate::probe::{create_probe_for_mangled_functions, delete_probe, find_mangled_functions};
 use crate::project::{BenchFile, get_workdir_for_project, Project, read_target_projects, TargetProject};
 
@@ -152,8 +155,14 @@ pub fn run(repetitions: usize, iterations: usize, profile_time: u64, cpu: usize)
 
 fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
 
-    // Create control file
-    nix::unistd::mkfifo("/tmp/perf.fifo", Mode::S_IWUSR).expect("Could not create /tmp/perf.fifo");
+    let tmp_dir = tempdir().unwrap();
+    let fifo_path = tmp_dir.path().join("control.pipe");
+
+    // create new fifo and give read, write and execute rights to others
+    match unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXO) {
+        Ok(_) => println!("Created {:?}", fifo_path),
+        Err(err) => println!("Error creating fifo: {}", err),
+    }
 
     // Remove all artifacts
     for record in read_target_projects() {
@@ -163,9 +172,6 @@ fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
 
     let mut run_requests: Vec<(Benchmark, Command)> = Default::default();
     let mut existing_probes: Vec<String> = vec![];
-
-    let file = create_tmp_file();
-    let fd = file.as_raw_fd();
 
     for record in read_target_projects() {
         println!("{:?}", record);
@@ -193,7 +199,7 @@ fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
                     features: group.features.clone(),
                 };
 
-                let command = create_command_for_bench(&bench, &executable, profile_time, cpu, fd);
+                let command = create_command_for_bench(&bench, &executable, profile_time, cpu, fifo_path.to_str().unwrap());
                 run_requests.push((bench, command));
             }
         }
@@ -210,15 +216,7 @@ fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
     }
 }
 
-pub fn create_tmp_file() -> File {
-    // Generate a random id for this temporary file
-    let mut uuid: u128 = 0;
-    thread_rng().fill(&mut [uuid]);
-    let file = File::create(format!("/tmp/perf-control-{:x}", uuid)).unwrap();
-    file
-}
-
-pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile_time: u64, cpu: usize, fd: RawFd) -> Command {
+pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile_time: u64, cpu: usize, tmpfile: &str) -> Command {
 
     let events: String = vec![
         format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_benchmark()).as_str(),
@@ -264,8 +262,8 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
     let target_executable = format!("\"{executable}\" \"--bench\" \"--profile-time\" \"{profile_time}\" \"^{benchmark_id}\\$\"");
     let rdmsr = format!("\"rdmsr\" \"-d\" \"0xc001029a\" \"-p\" \"{cpu}\" | \"tee\" \"-a\" \"{msr_output_file_path}\"");
     let date = format!("\"date\" \"+%s%3N\" | \"tee\" \"-a\" \"{msr_output_file_path}\"");
-    let enable = "\"echo\" \"enable\" | \"tee\" \"/tmp/perf.fifo\"";
-    let disable ="\"echo\" \"disable\" | \"tee\" \"/tmp/perf.fifo\"";
+    let enable = format!("\"echo\" \"enable\" | \"tee\" \"{tmpfile}\"");
+    let disable =format!("\"echo\" \"disable\" | \"tee\" \"{tmpfile}\"");
 
 
     let mut command = Command::new("perf");
@@ -279,7 +277,7 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
         .arg("-C").arg(cpu.to_string()) // measure core [cpu]
         .arg("--timestamp-boundary") // Add timestamp to first and last sample for matching with rdmsr
         .arg("--timestamp-filename")// Append timestamp to output file name
-        .arg("--control").arg("fifo:/tmp/perf.fifo")// Set the control file for enable/disable commands
+        .arg("--control").arg(format!("fifo:{tmpfile}"))// Set the control file for enable/disable commands
         .arg("--") // Command for perf to execute come after this
 
         // Taskset - run on the specified core
