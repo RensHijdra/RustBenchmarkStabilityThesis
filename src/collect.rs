@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use nix::sys::stat::Mode;
 use rand::seq::SliceRandom;
 use rand::{Rng, thread_rng};
 use regex::Regex;
@@ -150,6 +151,9 @@ pub fn run(repetitions: usize, iterations: usize, profile_time: u64, cpu: usize)
 
 
 fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
+
+    // Create control file
+    nix::unistd::mkfifo("/tmp/perf.fifo", Mode::S_IWUSR).expect("Could not create /tmp/perf.fifo");
 
     // Remove all artifacts
     for record in read_target_projects() {

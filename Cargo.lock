@@ -1197,6 +1197,8 @@ dependencies = [
  "bitflags",
  "cfg-if",
  "libc",
+ "memoffset 0.7.1",
+ "pin-utils",
  "static_assertions",
 ]
 
@@ -2479,6 +2481,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "linux-perf-data",
+ "nix",
  "perf-event-open-sys",
  "ra_ap_hir",
  "ra_ap_ide",

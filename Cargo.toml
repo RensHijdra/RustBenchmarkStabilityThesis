@@ -33,3 +33,4 @@ ra_ap_ide = "0.0.149"
 ra_ap_syntax = "0.0.149"
 clap = { version = "4.1.8", features = ["derive"] }
 linux-perf-data = "0.8.0"
+nix = { version = "0.26.2", features = ["fs"] }
