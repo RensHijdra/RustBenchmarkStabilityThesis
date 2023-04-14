@@ -291,7 +291,7 @@ pub fn create_command_for_bench(benchmark: &Benchmark, executable: &str, profile
 
 }
 
-fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command, repetitions: usize) {
+pub(crate) fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command, repetitions: usize) {
     println!(
         "Running project: {}, benchmark: {}, id: {} at {:?}",
         &benchmark.project,
@@ -354,4 +354,18 @@ pub fn compile_benchmark_file(benchmark: &BenchFile) -> String {
     }
 
     string
+}
+
+
+#[test]
+fn test_makefifo() {
+    let tmp_dir = tempdir().unwrap();
+    let fifo_path = tmp_dir.path().join("control.pipe");
+
+    // create new fifo and give read, write and execute rights to others
+    match unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXO) {
+        Ok(_) => println!("Created {:?}", fifo_path),
+        Err(err) => println!("Error creating fifo: {}", err),
+    }
+    assert!(fifo_path.exists())
 }
