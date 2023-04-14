@@ -50,10 +50,6 @@ use crate::project::{BenchFile, get_workdir_for_project, Project, read_target_pr
 
 // Do a logout
 
-static mut ITERATIONS: usize = 1;
-static mut CPU: usize = 1;
-static mut PROFILE_TIME: u64 = 30;
-
 #[derive(Debug, Serialize)]
 struct IterationStat {
     benchmark: Benchmark,
@@ -306,8 +302,7 @@ fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command, repetitions: usize) {
     println!("{:?}", cmd);
     for _ in 0..repetitions {
         let output = cmd.output().unwrap();
-        let status = output.status;
-        println!("{}", status);
+        println!("{}", std::str::from_utf8(&*output.stderr).unwrap());
     }
 }
 
