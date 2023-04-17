@@ -155,7 +155,7 @@ fn do_one_iteration(repetitions: usize, profile_time: u64, cpu: usize) {
     let fifo_path = tmp_dir.path().join("control.pipe");
 
     // create new fifo and give read, write and execute rights to others
-    match unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXO) {
+    match unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXU) {
         Ok(_) => println!("Created {:?}", fifo_path),
         Err(err) => println!("Error creating fifo: {}", err),
     }
@@ -363,7 +363,7 @@ fn test_makefifo() {
     let fifo_path = tmp_dir.path().join("control.pipe");
 
     // create new fifo and give read, write and execute rights to others
-    match unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXO) {
+    match unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXU) {
         Ok(_) => println!("Created {:?}", fifo_path),
         Err(err) => println!("Error creating fifo: {}", err),
     }

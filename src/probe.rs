@@ -12,7 +12,7 @@ use ra_ap_hir::known::{assert, str};
 use regex::Regex;
 use tempfile::tempdir;
 
-use crate::collect::{Benchmark, compile_benchmark_file, create_command_for_bench};
+use crate::collect::{Benchmark, compile_benchmark_file, create_command_for_bench, run_benchmark};
 use crate::project::{BenchFile, find_benchmarks_for_project, get_workdir_for_project, Project};
 
 pub(crate) fn find_mangled_functions(executable_path: &str) -> Vec<String> {
@@ -122,8 +122,9 @@ fn run_test_with_probes() {
             println!("{}", bench_method);
             let mut command = create_command_for_bench(&benchmark, &exe, 2, 1, fifo_path.to_str().unwrap());
             println!("{:?}", command);
-            let output = command.output().unwrap();
-            println!("{}", std::str::from_utf8(&*output.stderr).unwrap());
+            run_benchmark(&benchmark, &mut command, 1);
+            // let output = command.output().unwrap();
+            // println!("{}", std::str::from_utf8(&*output.stderr).unwrap());
         }
         delete_probe(&format!("probe_{}:*", &bench.name));
     }
