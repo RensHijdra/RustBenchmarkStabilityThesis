@@ -177,14 +177,17 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
 
     // Clear artifacts
     let target_projects = read_target_projects();
+
     let cargo_clear_bar = m.add(ProgressBar::new(target_projects.len() as u64));
     cargo_clear_bar.set_style(sty.clone());
-    m.println("Clearing existing projects");
+    // m.println("Clearing existing projects");
+
 
     if !env::var("ENERGY_DEBUG").is_ok() {
         // Clear
         for record in &target_projects {
             let project = Project::load(&record.name).expect("Could not load project {");
+            cargo_clear_bar.set_message(format!("Clearing project: {}", &project.name));
             cargo_clean_project(&project.name);
             cargo_clear_bar.inc(1);
         }
@@ -193,16 +196,15 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
     cargo_clear_bar.finish();
     m.remove(&cargo_clear_bar);
 
-    m.println("Compiling projects");
     let mut commands: Vec<Command> = Default::default();
 
     let compile_project_bar = m.add(ProgressBar::new(target_projects.len() as u64));
     compile_project_bar.set_style(sty.clone());
-
+    compile_project_bar.set_message("Compiling projects");
     // Compile all files and give permissions to all executables
     // Create command per benchmark
     for record in &target_projects {
-        m.println(format!("Compiling project: {:?}", record));
+        compile_project_bar.set_message(format!("Compiling project: {:?}", record));
 
         let target_project = record;
         let project = Project::load(&target_project.name).unwrap();
@@ -211,7 +213,7 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
         bench_group_bar.set_style(sty.clone());
 
         for group in &project.bench_files {
-            m.println(format!("Compiling project: {}; benchmark: {}", project.name, group.name));
+            bench_group_bar.set_message(format!("Compiling project: {}; benchmark: {}", project.name, group.name));
 
             // Compile and save the executable
             let executable = compile_benchmark_file(&group);
@@ -223,15 +225,25 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
         }
         bench_group_bar.finish();
         compile_project_bar.inc(1);
+        m.remove(&bench_group_bar);
     }
     compile_project_bar.finish();
+    m.remove(&compile_project_bar);
 
     // Shuffle commands
     commands.shuffle(&mut thread_rng());
 
-    println!("Running commands");
+    let sty = ProgressStyle::with_template(
+        "[{elapsed_precise} | {eta_precise}] {wide_bar:40.cyan/blue} {pos:>7}/{len:7}",
+    ).unwrap();
+
+    // Set up progress bar for commands
+    let mut benchmark_command_iterator = commands.iter_mut().progress();
+    benchmark_command_iterator.progress.clone().with_style(sty.clone());
+    m.add(benchmark_command_iterator.progress.clone());
+
     // Run commands
-    let success = commands.iter_mut().progress().all(run_command);
+    let success = benchmark_command_iterator.all(run_command);
 
     // Check if all commands were succesful
     if !success {
@@ -246,7 +258,6 @@ fn run_command(command: &mut Command) -> bool {
     debugln!("{command:?}");
     command.status().unwrap().success()
 }
-
 
 
 fn criterion_bench_command(executable: &str, benchmark_id: &str, measurement_time: u64, warmup_time: u64, sample_size: u64) -> Command {
@@ -274,11 +285,7 @@ fn cargo_clean_project(project: &str) -> () {
 }
 
 pub fn compile_benchmark_file(benchmark: &BenchFile) -> String {
-    debugln!(
-        "Compiling {} in {}",
-        benchmark.name,
-        benchmark.get_workdir()
-    );
+    debugln!("Compiling {} in {}", benchmark.name, benchmark.get_workdir());
     let mut cargo = Command::new("cargo");
 
     cargo

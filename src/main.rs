@@ -119,12 +119,12 @@ mod probe;
 #[command(bin_name = "power")]
 enum Cli {
     #[command(name = "run")]
-    RunExperiment(ExperimentSettings),
+    Experiment(ExperimentSettings),
     #[command(subcommand)]
     Project(ProjectCommand),
     #[command(subcommand, name = "stat")]
     Statistics(StatisticsCommand),
-    #[command()]
+    #[command(about = "Set capability SYS_RAWIO to permitted and set the effective bit for this executable. Needs root.")]
     Elevate,
 }
 
@@ -160,7 +160,7 @@ enum StatisticsCommand {
 fn main() {
     let parse = Cli::parse();
     match parse {
-        Cli::RunExperiment(settings) => {
+        Cli::Experiment(settings) => {
             check_capabilities();
             collect::run(settings.repetitions, settings.measurement_time, settings.warmup_time, settings.sample_size)
         }
