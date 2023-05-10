@@ -40,25 +40,14 @@ fn test_find_mangled_functions() {
 pub(crate) fn create_probe_for_mangled_functions(function_names: &Vec<String>, executable: &str, bench: &BenchFile) -> bool {
     function_names.iter().map(|function| {
         let result = Command::new("perf")
-            // .current_dir(get_workdir_for_project(&bench.project))
             .arg("probe")
             .arg("-f") // Force probes with the same name
             .arg("-x").arg(executable)
             .arg("--add").arg(format!("{}={} self->iters", bench.get_clean_name(), function))
             .status();
-        // function return probe
-        // Command::new("perf")
-        //     // .current_dir(get_workdir_for_project(&bench.project))
-        //     .arg("probe")
-        //     .arg("-f") // Force probes with the same name
-        //     .arg("-x").arg(executable)
-        //     .arg("--add").arg(format!("{}={}%return", bench.get_clean_name(), function))
-        //     .status().unwrap();
-
         if result.is_err() {
             // Some versions require iters to be accessed by . instead of ->
             Command::new("perf")
-                // .current_dir(get_workdir_for_project(&bench.project))
                 .arg("probe")
                 .arg("-f") // Force probes with the same name
                 .arg("-x").arg(executable)

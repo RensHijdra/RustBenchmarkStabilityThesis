@@ -1,3 +1,5 @@
+use std::env;
+use std::process::Command;
 // #![allow(dead_code, unused)]
 //
 //
@@ -100,7 +102,11 @@
 //     }
 // }
 use clap::Parser;
+use nix::libc;
 use crate::project::{clone_projects_from_targets};
+use caps::{Capability, CapSet};
+use caps::errors::CapsError;
+use rstats::Printing;
 
 mod collect;
 mod project;
@@ -116,6 +122,10 @@ enum Cli {
     RunExperiment(ExperimentSettings),
     #[command(subcommand)]
     Project(ProjectCommand),
+    #[command(subcommand, name ="stat")]
+    Statistics(StatisticsCommand),
+    #[command()]
+    Elevate,
 }
 
 #[derive(clap::Args, Debug)]
@@ -140,9 +150,15 @@ enum ProjectCommand {
     Download,
 }
 
+#[derive(clap::Subcommand, Debug)]
+enum StatisticsCommand {
+    Parse,
+    Merge
+}
+
+
 fn main() {
     let parse = Cli::parse();
-    println!("{:?}", parse);
     match parse {
         Cli::RunExperiment(settings) => {
             collect::run(settings.repetitions, settings.iterations, settings.profile_time, settings.cpu)
@@ -160,5 +176,27 @@ fn main() {
                 }
             }
         }
+        Cli::Statistics(subcommand) => {
+            match subcommand {
+                StatisticsCommand::Parse => {
+                }
+                StatisticsCommand::Merge => {}
+            }
+        },
+        Cli::Elevate => {
+            // Check own process rights
+            let executable = env::current_exe().unwrap();
+            match Command::new("setcap").arg("CAP_SYS_RAWIO=epi").arg(&executable).output() {
+                Ok(out) => {
+                    if out.status.success() {
+                        println!("Succesfully set capability CAP_SYS_RAWIO for {}", &executable.to_str().unwrap())
+                    } else {
+                        panic!("Failed to set capability for self, try running with sudo")
+                    }
+                }
+                Err(err) => panic!("Error setting own capabilities: {}", err)
+            }
+        }
     }
+
 }
