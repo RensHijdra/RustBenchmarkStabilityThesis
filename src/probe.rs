@@ -12,7 +12,7 @@ use ra_ap_hir::known::{assert, str};
 use regex::Regex;
 use tempfile::tempdir;
 
-use crate::collect::{Benchmark, compile_benchmark_file, create_command_for_bench, run_benchmark};
+use crate::collect::{Benchmark, compile_benchmark_file};
 use crate::project::{BenchFile, find_benchmarks_for_project, get_workdir_for_project, Project};
 
 pub(crate) fn find_mangled_functions(executable_path: &str) -> Vec<String> {
@@ -66,55 +66,4 @@ pub(crate) fn delete_probe(probe: &str) -> bool {
         .arg(probe)
         .output()
         .is_ok()
-}
-
-
-#[test]
-fn run_test_mangled_function_probe() {
-    let project = Project::load("chrono").unwrap();
-    for bench in project.bench_files {
-        let exe = compile_benchmark_file(&bench);
-        let functions = find_mangled_functions(&exe);
-        println!("{:?}", functions);
-        let status = create_probe_for_mangled_functions(&functions, &exe, &bench);
-        assert!(status);
-    }
-}
-
-#[test]
-fn run_test_with_probes() {
-    let project = Project::load("chrono").unwrap();
-    let tmp_dir = tempdir().unwrap();
-    let fifo_path = tmp_dir.path().join("control.pipe");
-
-    // create new fifo and give read, write and execute rights to others
-    match unistd::mkfifo(&fifo_path, stat::Mode::S_IRWXU) {
-        Ok(_) => println!("Created {:?}", fifo_path),
-        Err(err) => println!("Error creating fifo: {}", err),
-    }
-
-
-    for bench in project.bench_files {
-        let exe = compile_benchmark_file(&bench);
-        println!("{}", exe);
-        let functions = find_mangled_functions(&exe);
-        println!("{:?}", functions);
-        let status = create_probe_for_mangled_functions(&functions, &exe, &bench);
-        for bench_method in bench.benches {
-            let benchmark = Benchmark::new(
-                project.name.clone(),
-                bench.name.clone(),
-                bench.source.clone().rsplit_once("/").unwrap().0.to_string(),
-                bench_method.clone(),
-                bench.features.clone(),
-            );
-            println!("{}", bench_method);
-            let mut command = create_command_for_bench(&benchmark, &exe, 2, 1);
-            println!("{:?}", command);
-            run_benchmark(&benchmark, &mut command, 1);
-            // let output = command.output().unwrap();
-            // println!("{}", std::str::from_utf8(&*output.stderr).unwrap());
-        }
-        delete_probe(&format!("probe_{}:*", &bench.name));
-    }
 }
