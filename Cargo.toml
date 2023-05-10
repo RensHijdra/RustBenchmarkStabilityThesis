@@ -39,3 +39,4 @@ tempfile = "3.5.0"
 chrono = "0.4.24"
 caps = "0.5.5"
 indicatif = "0.17.3"
+syscalls = { version = "0.6.10", features = ["x86_64"] }

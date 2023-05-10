@@ -1,5 +1,8 @@
 use std::env;
 use std::process::Command;
+
+use caps::{Capability, CapSet, CapsHashSet};
+use caps::errors::CapsError;
 // #![allow(dead_code, unused)]
 //
 //
@@ -103,10 +106,9 @@ use std::process::Command;
 // }
 use clap::Parser;
 use nix::libc;
-use crate::project::{clone_projects_from_targets};
-use caps::{Capability, CapSet};
-use caps::errors::CapsError;
 use rstats::Printing;
+
+use crate::project::clone_projects_from_targets;
 
 mod collect;
 mod project;
@@ -122,7 +124,7 @@ enum Cli {
     RunExperiment(ExperimentSettings),
     #[command(subcommand)]
     Project(ProjectCommand),
-    #[command(subcommand, name ="stat")]
+    #[command(subcommand, name = "stat")]
     Statistics(StatisticsCommand),
     #[command()]
     Elevate,
@@ -153,7 +155,7 @@ enum ProjectCommand {
 #[derive(clap::Subcommand, Debug)]
 enum StatisticsCommand {
     Parse,
-    Merge
+    Merge,
 }
 
 
@@ -161,6 +163,7 @@ fn main() {
     let parse = Cli::parse();
     match parse {
         Cli::RunExperiment(settings) => {
+            check_capabilities();
             collect::run(settings.repetitions, settings.iterations, settings.profile_time, settings.cpu)
         }
         Cli::Project(subcommand) => {
@@ -178,18 +181,18 @@ fn main() {
         }
         Cli::Statistics(subcommand) => {
             match subcommand {
-                StatisticsCommand::Parse => {
-                }
+                StatisticsCommand::Parse => {}
                 StatisticsCommand::Merge => {}
             }
-        },
+        }
         Cli::Elevate => {
+            println!("{:?}", CapSet::Effective);
             // Check own process rights
             let executable = env::current_exe().unwrap();
-            match Command::new("setcap").arg("CAP_SYS_RAWIO=epi").arg(&executable).output() {
+            match Command::new("setcap").arg("CAP_SYS_RAWIO=ep").arg(&executable).output() {
                 Ok(out) => {
                     if out.status.success() {
-                        println!("Succesfully set capability CAP_SYS_RAWIO for {}", &executable.to_str().unwrap())
+                        println!("Succesfully set capability CAP_SETFCAP for {}", &executable.to_str().unwrap())
                     } else {
                         panic!("Failed to set capability for self, try running with sudo")
                     }
@@ -198,5 +201,29 @@ fn main() {
             }
         }
     }
+}
 
+
+fn check_capabilities() {
+    check_or_panic_rawio(CapSet::Permitted);
+    check_or_panic_rawio(CapSet::Effective);
+
+    match caps::set(None, CapSet::Inheritable, &CapsHashSet::from([Capability::CAP_SYS_RAWIO])) {
+        Ok(_) => println!("Successfully set rawio to inheritable"),
+        Err(err) => panic!("Failed to set rawio to inheritable with error: {}", err)
+    }
+
+    match caps::set(None, CapSet::Ambient, &CapsHashSet::from([Capability::CAP_SYS_RAWIO])) {
+        Ok(_) => println!("Successfully set rawio to ambient"),
+        Err(err) => panic!("Failed to set rawio to ambient with error: {}", err)
+    }
+}
+
+fn check_or_panic_rawio(set: CapSet) {
+    match caps::has_cap(None, set, Capability::CAP_SYS_RAWIO) {
+        Ok(bool) => if !bool {
+            panic!("CAP_SYS_RAWIO is not in the {:?} set. Did you run `sudo {} elevate`?", set, env::current_exe().unwrap().file_name().unwrap().to_str().unwrap())
+        }
+        Err(err) => panic!("Failed to read {:?} capabilities set. {}", set, err)
+    }
 }

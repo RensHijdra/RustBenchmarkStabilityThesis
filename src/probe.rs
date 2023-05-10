@@ -109,7 +109,7 @@ fn run_test_with_probes() {
                 bench.features.clone(),
             );
             println!("{}", bench_method);
-            let mut command = create_command_for_bench(&benchmark, &exe, 2, 1, fifo_path.to_str().unwrap());
+            let mut command = create_command_for_bench(&benchmark, &exe, 2, 1);
             println!("{:?}", command);
             run_benchmark(&benchmark, &mut command, 1);
             // let output = command.output().unwrap();
