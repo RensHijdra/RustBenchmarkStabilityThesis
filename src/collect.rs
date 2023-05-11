@@ -1,6 +1,5 @@
 #![allow(unused)]
 
-use std::{env, fs, ptr};
 use std::ffi::{CString, OsString};
 use std::fs::File;
 use std::io::Error;
@@ -11,27 +10,30 @@ use std::os::unix::io::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{env, fs, ptr};
 
-use caps::{Capability, CapSet, CapsHashSet};
 use caps::errors::CapsError;
+use caps::{CapSet, Capability, CapsHashSet};
 use indicatif::{MultiProgress, ProgressBar, ProgressIterator, ProgressStyle};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use nix::{libc, unistd};
 use nix::libc::execv;
 use nix::sys::stat;
 use nix::sys::stat::Mode;
+use nix::{libc, unistd};
 use ra_ap_hir::known::assert;
-use rand::{Rng, thread_rng};
 use rand::seq::SliceRandom;
+use rand::{thread_rng, Rng};
 use regex::{Captures, Regex};
 use rstats::Printing;
 use serde::{Deserialize, Serialize};
-use syscalls::{Errno, syscall, Sysno};
+use syscalls::{syscall, Errno, Sysno};
 use tempfile::tempdir;
 
 use crate::probe::{create_probe_for_mangled_functions, delete_probe, find_mangled_functions};
-use crate::project::{BenchFile, get_workdir_for_project, Project, read_target_projects, TargetProject};
+use crate::project::{
+    get_workdir_for_project, read_target_projects, BenchFile, Project, TargetProject,
+};
 
 // use crate::probe::{create_named_probe_for_adresses, delete_probe, find_probe_addresses};
 // use crate::project::BenchFile;
@@ -128,9 +130,20 @@ impl Benchmark {
             .replace("-", "_")
     }
 
-
-    pub fn new(project: String, benchmark: String, path: String, id: String, features: Vec<String>) -> Self {
-        Self { project, benchmark, path, id, features }
+    pub fn new(
+        project: String,
+        benchmark: String,
+        path: String,
+        id: String,
+        features: Vec<String>,
+    ) -> Self {
+        Self {
+            project,
+            benchmark,
+            path,
+            id,
+            features,
+        }
     }
 }
 
@@ -159,7 +172,6 @@ fn main() {
     run(1, 5, 1, 5);
 }
 
-
 pub fn run(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64) {
     for _ in 0..iterations {
         iteration(measurement_time, warmup_time, sample_size);
@@ -171,9 +183,8 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
     let sty = ProgressStyle::with_template(
         "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
     )
-        .unwrap()
-        .progress_chars("##-");
-
+    .unwrap()
+    .progress_chars("##-");
 
     // Clear artifacts
     let target_projects = read_target_projects();
@@ -181,7 +192,6 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
     let cargo_clear_bar = m.add(ProgressBar::new(target_projects.len() as u64));
     cargo_clear_bar.set_style(sty.clone());
     // m.println("Clearing existing projects");
-
 
     if !env::var("KEEP_PROJECTS").is_ok() {
         // Clear
@@ -209,7 +219,10 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
         let target_project = record;
         let project = Project::load(&target_project.name).unwrap();
 
-        let bench_group_bar = m.insert_after(&compile_project_bar, ProgressBar::new(project.bench_files.len() as u64));
+        let bench_group_bar = m.insert_after(
+            &compile_project_bar,
+            ProgressBar::new(project.bench_files.len() as u64),
+        );
         bench_group_bar.set_style(sty.clone());
         bench_group_bar.enable_steady_tick(Duration::from_secs(1));
         for group in &project.bench_files {
@@ -219,7 +232,14 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
             let (executable, workdir) = compile_benchmark_file(&group);
 
             for bench_id in group.benches.iter() {
-                commands.push(criterion_bench_command(&executable, &bench_id, &workdir, measurement_time, warmup_time, sample_size));
+                commands.push(criterion_bench_command(
+                    &executable,
+                    &bench_id,
+                    &workdir,
+                    measurement_time,
+                    warmup_time,
+                    sample_size,
+                ));
             }
             bench_group_bar.inc(1);
         }
@@ -235,12 +255,19 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
 
     let sty = ProgressStyle::with_template(
         "[{elapsed_precise} | {eta_precise}] {wide_bar:40.cyan/blue} {pos:>7}/{len:7}",
-    ).unwrap();
+    )
+    .unwrap();
 
     // Set up progress bar for commands
     let mut benchmark_command_iterator = commands.iter_mut().progress();
-    benchmark_command_iterator.progress.clone().with_style(sty.clone());
-    benchmark_command_iterator.progress.clone().enable_steady_tick(Duration::from_secs(1));
+    benchmark_command_iterator
+        .progress
+        .clone()
+        .with_style(sty.clone());
+    benchmark_command_iterator
+        .progress
+        .clone()
+        .enable_steady_tick(Duration::from_secs(1));
 
     m.add(benchmark_command_iterator.progress.clone());
 
@@ -261,8 +288,14 @@ fn run_command(command: &mut Command) -> bool {
     command.status().unwrap().success()
 }
 
-
-fn criterion_bench_command(executable: &str, benchmark_id: &str, workdir: &PathBuf, measurement_time: u64, warmup_time: u64, sample_size: u64) -> Command {
+fn criterion_bench_command(
+    executable: &str,
+    benchmark_id: &str,
+    workdir: &PathBuf,
+    measurement_time: u64,
+    warmup_time: u64,
+    sample_size: u64,
+) -> Command {
     let mut bench_binary = Command::new(executable);
 
     // Configure the benchmark settings
@@ -272,7 +305,6 @@ fn criterion_bench_command(executable: &str, benchmark_id: &str, workdir: &PathB
         .args(["--measurement-time", &measurement_time.to_str()])
         .args(["--warm-up-time", &warmup_time.to_str()])
         .args(["--sample-size", &sample_size.to_str()])
-
         .arg(format!("^{}$", benchmark_id));
     // Criterion uses a regex to select benchmarks,
     // so we do this to prevent selecting multiple benchmarks to run
@@ -289,7 +321,11 @@ fn cargo_clean_project(project: &str) -> () {
 }
 
 pub fn compile_benchmark_file(benchmark: &BenchFile) -> (String, PathBuf) {
-    debugln!("Compiling {} in {}", benchmark.name, benchmark.get_workdir());
+    debugln!(
+        "Compiling {} in {}",
+        benchmark.name,
+        benchmark.get_workdir()
+    );
     let mut cargo = Command::new("cargo");
 
     cargo
@@ -307,12 +343,15 @@ pub fn compile_benchmark_file(benchmark: &BenchFile) -> (String, PathBuf) {
     let stderr = std::str::from_utf8(&*output.stderr).unwrap().to_string();
 
     lazy_static! {
-        static ref EXEC_REG: Regex = Regex::new(r"Executable .*? \((.*?target/release/deps/[\w_-]+)\)").unwrap();
+        static ref EXEC_REG: Regex =
+            Regex::new(r"Executable .*? \((.*?target/release/deps/[\w_-]+)\)").unwrap();
     }
 
     match EXEC_REG.captures_iter(&stderr).next() {
         None => (String::new(), PathBuf::new()),
-        Some(found_match) => (found_match[1].to_string(), get_workdir_for_project(&benchmark.project))
+        Some(found_match) => (
+            found_match[1].to_string(),
+            get_workdir_for_project(&benchmark.project),
+        ),
     }
 }
-

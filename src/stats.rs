@@ -8,25 +8,25 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
 
-use chrono::{NaiveDateTime};
+use chrono::NaiveDateTime;
 
-use csv::{Trim};
+use crate::project::read_target_projects;
+use csv::Trim;
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use linux_perf_data::{PerfFileReader, PerfFileRecord, RawUserRecord, UserRecord, UserRecordType};
 use linux_perf_data::linux_perf_event_reader::RawData;
 use linux_perf_data::UserRecord::Raw;
+use linux_perf_data::{PerfFileReader, PerfFileRecord, RawUserRecord, UserRecord, UserRecordType};
 use nix::dir::Dir;
 use ra_ap_ide::ExprFillDefaultMode::Default;
-use rand::distributions::{Uniform};
+use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use rstats::{noop, MStats, Median, Stats, RE};
 use serde::{Deserialize, Serialize};
 use statrs::assert_almost_eq;
 use statrs::distribution::{Beta, ContinuousCDF};
-use crate::project::read_target_projects;
 
 #[derive(Debug, Deserialize)]
 struct Datapoint {
@@ -67,22 +67,25 @@ struct Statistic {
     rciw_mjhd: f64,
 }
 
-
-
-struct PowerFile{name:  String, ts: i64}
-struct PerfFile{name:  String, ts: i64}
-
+struct PowerFile {
+    name: String,
+    ts: i64,
+}
+struct PerfFile {
+    name: String,
+    ts: i64,
+}
 
 #[test]
 fn test_powerfile_to_benchname() {
-    let PowerFile{name, ts} = powerfile_to_benchname("simple_1m_zeroes_1m_1681874840353873.txt");
-            assert_eq!(name, "simple_1m_zeroes_1m");
-            assert_eq!(ts, 1681874840353873_i64)
+    let PowerFile { name, ts } = powerfile_to_benchname("simple_1m_zeroes_1m_1681874840353873.txt");
+    assert_eq!(name, "simple_1m_zeroes_1m");
+    assert_eq!(ts, 1681874840353873_i64)
 }
 
 #[test]
 fn test_perffile_to_benchname() {
-    let PerfFile{name, ts} = perffile_to_benchname("simple_1m_ones_1m.profraw.2023042100382591");
+    let PerfFile { name, ts } = perffile_to_benchname("simple_1m_ones_1m.profraw.2023042100382591");
     assert_eq!(name, "simple_1m_ones_1m");
     assert_eq!(ts, 2023042100382591_i64);
 }
@@ -91,7 +94,14 @@ fn powerfile_to_benchname(file_name: &str) -> PowerFile {
     lazy_static! {
         static ref POWERFILE_PATTERN: Regex = Regex::new(r"(.*?)_([0-9]{16}).txt").unwrap();
     }
-    POWERFILE_PATTERN.captures_iter(file_name).map(|cap| PowerFile{name: String::from(&cap[1]), ts: i64::from_str(&cap[2]).unwrap()}).next().unwrap()
+    POWERFILE_PATTERN
+        .captures_iter(file_name)
+        .map(|cap| PowerFile {
+            name: String::from(&cap[1]),
+            ts: i64::from_str(&cap[2]).unwrap(),
+        })
+        .next()
+        .unwrap()
 }
 
 fn perffile_to_benchname(file_name: &str) -> PerfFile {
@@ -99,9 +109,15 @@ fn perffile_to_benchname(file_name: &str) -> PerfFile {
         static ref PERFFILE_PATTERN: Regex = Regex::new(r"(.*?).profraw.([0-9]{16})").unwrap();
     }
     // println!("{:?}", PERFFILE_PATTERN.captures_iter(file_name));
-    PERFFILE_PATTERN.captures_iter(file_name).map(|cap| PerfFile{name: String::from(&cap[1]), ts: i64::from_str(&cap[2]).unwrap()}).next().unwrap()
+    PERFFILE_PATTERN
+        .captures_iter(file_name)
+        .map(|cap| PerfFile {
+            name: String::from(&cap[1]),
+            ts: i64::from_str(&cap[2]).unwrap(),
+        })
+        .next()
+        .unwrap()
 }
-
 
 #[test]
 fn test_parse_perf_files() {
@@ -111,7 +127,7 @@ fn test_parse_perf_files() {
 #[derive(Debug)]
 struct EnergyReading {
     ts: NaiveDateTime,
-    energy: i64
+    energy: i64,
 }
 
 fn parse_perf_files(filedir: &str) {
@@ -121,7 +137,6 @@ fn parse_perf_files(filedir: &str) {
     let mut perf: Vec<(PathBuf, PerfFile)> = Vec::new();
     let mut pow: Vec<(PathBuf, PowerFile)> = Vec::new();
 
-
     for benchfile in result {
         let benchfile = benchfile.unwrap();
         let dir = fs::read_dir(benchfile.path()).unwrap();
@@ -129,9 +144,20 @@ fn parse_perf_files(filedir: &str) {
             for perf_file in fs::read_dir(bench_dir.unwrap().path()).unwrap() {
                 let perf_file = perf_file.unwrap();
                 if perf_file.file_name().to_str().unwrap().ends_with(".txt") {
-                    pow.push((perf_file.path(), powerfile_to_benchname(perf_file.file_name().to_str().unwrap())));
-                } else if perf_file.file_name().to_str().unwrap().contains(".profraw.") {
-                    perf.push((perf_file.path(), perffile_to_benchname(perf_file.file_name().to_str().unwrap())));
+                    pow.push((
+                        perf_file.path(),
+                        powerfile_to_benchname(perf_file.file_name().to_str().unwrap()),
+                    ));
+                } else if perf_file
+                    .file_name()
+                    .to_str()
+                    .unwrap()
+                    .contains(".profraw.")
+                {
+                    perf.push((
+                        perf_file.path(),
+                        perffile_to_benchname(perf_file.file_name().to_str().unwrap()),
+                    ));
                 }
             }
         }
@@ -142,25 +168,37 @@ fn parse_perf_files(filedir: &str) {
     // TODO perf script each benchmark
 
     lazy_static! {
-        static ref POWER_PAT: Regex = Regex::new(r"(?m)([0-9]{13})\n([0-9]{2,20})\n([0-9]{2,20})").unwrap();
+        static ref POWER_PAT: Regex =
+            Regex::new(r"(?m)([0-9]{13})\n([0-9]{2,20})\n([0-9]{2,20})").unwrap();
     }
 
     // Process all energy data
-    let mut flatten = pow.iter().map(|(path, PowerFile { name, ts })| {
-        let readings = POWER_PAT.captures_iter(&String::from_utf8(fs::read(path).unwrap()).unwrap()).map(|cap| {
-            let ts = chrono::NaiveDateTime::from_timestamp_millis(i64::from_str(&cap[1]).unwrap()).unwrap();
-            let energy = i64::from_str(&cap[3]).unwrap() - i64::from_str(&cap[2]).unwrap();
-            EnergyReading { ts, energy }
-        }).collect::<Vec<EnergyReading>>();
+    let mut flatten = pow
+        .iter()
+        .map(|(path, PowerFile { name, ts })| {
+            let readings = POWER_PAT
+                .captures_iter(&String::from_utf8(fs::read(path).unwrap()).unwrap())
+                .map(|cap| {
+                    let ts = chrono::NaiveDateTime::from_timestamp_millis(
+                        i64::from_str(&cap[1]).unwrap(),
+                    )
+                    .unwrap();
+                    let energy = i64::from_str(&cap[3]).unwrap() - i64::from_str(&cap[2]).unwrap();
+                    EnergyReading { ts, energy }
+                })
+                .collect::<Vec<EnergyReading>>();
 
-        (name.clone(), readings)
-    }).collect::<Vec<(String, Vec<EnergyReading>)>>();
+            (name.clone(), readings)
+        })
+        .collect::<Vec<(String, Vec<EnergyReading>)>>();
 
     let mut energy_map = HashMap::new();
     for (k, mut v) in flatten {
-        energy_map.entry(k).or_insert_with(Vec::<EnergyReading>::new).append(&mut v)
+        energy_map
+            .entry(k)
+            .or_insert_with(Vec::<EnergyReading>::new)
+            .append(&mut v)
     }
-
 
     // let mut writer = csv::WriterBuilder::new().from_writer(std::io::stdout());
     // for (k, v) in energy_map {
@@ -171,13 +209,11 @@ fn parse_perf_files(filedir: &str) {
 
     // println!("{:?}", energy_map);
 
-
     // println!("{:?}", statistic);
-
 
     // flatten.sort_by(|(name, _), (other_name, _)| name.cmp(other_name));
     // let flatten = flatten.iter().group_by(|(name, _)| name).;
-    for (path, PerfFile{name, ts}) in perf {
+    for (path, PerfFile { name, ts }) in perf {
         perf_script(path);
     }
 
@@ -192,19 +228,23 @@ fn test_perf_script() {
     let data = "/home/rens/";
 }
 
-
 struct ScriptLine {}
 fn perf_script(file: PathBuf) {
-
     let file = std::fs::File::open(file).unwrap();
     let reader = std::io::BufReader::new(file);
     let perfreader = PerfFileReader::parse_file(reader);
     if perfreader.is_err() {
         return;
     }
-    let PerfFileReader { mut perf_file, mut record_iter } = perfreader.unwrap();
-    let event_names: Vec<_> =
-        perf_file.event_attributes().iter().filter_map(linux_perf_data::AttributeDescription::name).collect();
+    let PerfFileReader {
+        mut perf_file,
+        mut record_iter,
+    } = perfreader.unwrap();
+    let event_names: Vec<_> = perf_file
+        .event_attributes()
+        .iter()
+        .filter_map(linux_perf_data::AttributeDescription::name)
+        .collect();
     println!("perf events: {}", event_names.join(", "));
 
     while let Some(record) = record_iter.next_record(&mut perf_file).unwrap() {
@@ -218,7 +258,10 @@ fn perf_script(file: PathBuf) {
                     break;
                 }
                 let parsed_record = result.unwrap();
-                println!("{:?} for event {}: {:?}", record_type, attr_index, parsed_record);
+                println!(
+                    "{:?} for event {}: {:?}",
+                    record_type, attr_index, parsed_record
+                );
             }
             PerfFileRecord::UserRecord(record) => {
                 let record_type = record.record_type;
@@ -226,17 +269,25 @@ fn perf_script(file: PathBuf) {
                 // println!("{:?}: {:?}", record_type, parsed_record);
                 match parsed_record {
                     UserRecord::ThreadMap(_) => {}
-                    Raw(rec) => match rec { RawUserRecord { record_type, endian, misc, data } => {
-                        println!("{:?}", record_type);
-                        println!("{}", misc);
-                        println!("{:?}", endian);
-                        match data {
-                            RawData::Single(data) => println!("{:?}", data),
-                            RawData::Split(first, second) => println!("{:?}, {:?}", first, second)
+                    Raw(rec) => match rec {
+                        RawUserRecord {
+                            record_type,
+                            endian,
+                            misc,
+                            data,
+                        } => {
+                            println!("{:?}", record_type);
+                            println!("{}", misc);
+                            println!("{:?}", endian);
+                            match data {
+                                RawData::Single(data) => println!("{:?}", data),
+                                RawData::Split(first, second) => {
+                                    println!("{:?}, {:?}", first, second)
+                                }
+                            }
                         }
-
-                    }}
-                    l => println!("Unmatched {:?}", l)
+                    },
+                    l => println!("Unmatched {:?}", l),
                 }
             }
         }
@@ -244,9 +295,8 @@ fn perf_script(file: PathBuf) {
     // let output = Command::new("perf").arg("data").arg("convert").arg("-i").arg(file.to_str().unwrap()).arg("--to-json").arg(format!("{}.json", file.to_str().unwrap())).output().unwrap();
 
     // if !output.status.success() {
-        // error_chain::bail!("Command executed with failing error code");
+    // error_chain::bail!("Command executed with failing error code");
     // }
-
 
     // let result = String::from_utf8(fs::read(format!("{}.json", file.to_str().unwrap())).unwrap()).unwrap();
 
@@ -271,15 +321,15 @@ fn perf_script(file: PathBuf) {
     // Ok(())
 }
 
-
 fn stats_for_project(project: &str) {
-    let mut wtr = csv::WriterBuilder::new().has_headers(false).from_writer(std::io::stdout());
+    let mut wtr = csv::WriterBuilder::new()
+        .has_headers(false)
+        .from_writer(std::io::stdout());
     let result = fs::read_dir(format!("data/{}", project));
-    if result.is_err(){
+    if result.is_err() {
         return;
     }
-    for benchmark_dir_entry in result.unwrap()
-    {
+    for benchmark_dir_entry in result.unwrap() {
         if let Ok(benchmark_dir) = benchmark_dir_entry {
             for bench_file_entry in benchmark_dir.path().read_dir().unwrap() {
                 if let Ok(benchmark_file) = bench_file_entry {
@@ -352,7 +402,13 @@ fn stats_for_project(project: &str) {
     }
 }
 
-fn data_to_statistics(project: &str, benchmark: &str, id: &str, datapoint: &str, mut data: &mut Vec<f64>) -> Statistic {
+fn data_to_statistics(
+    project: &str,
+    benchmark: &str,
+    id: &str,
+    datapoint: &str,
+    mut data: &mut Vec<f64>,
+) -> Statistic {
     let MStats {
         centre: mean,
         dispersion: std,

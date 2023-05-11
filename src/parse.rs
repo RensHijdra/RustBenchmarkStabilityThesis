@@ -32,7 +32,6 @@
 
 extern crate core;
 
-
 use ra_ap_paths::AbsPath;
 use ra_ap_project_model::ProjectManifest;
 use ra_ap_rust_analyzer::cli::load_cargo::LoadCargoConfig;

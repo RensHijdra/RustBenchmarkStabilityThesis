@@ -68,7 +68,7 @@ fn get_manifest(path: &PathBuf) -> Manifest {
             "Could not find Cargo.toml for {}",
             path.as_path().to_str().to_owned().unwrap()
         )
-            .as_str(),
+        .as_str(),
     )
 }
 
@@ -232,11 +232,16 @@ pub(crate) fn find_all_benchmarks() -> Vec<Project> {
 }
 
 fn get_git_project(project: TargetProject) -> ExitStatus {
-    Command::new("git").current_dir(std::env::current_dir().unwrap().join("projects"))
-        .arg("clone").arg(project.repo_url)
-        .arg("--depth").arg("1")
-        .arg("--branch").arg(project.repo_tag)
-        .status().expect("Could not clone project.")
+    Command::new("git")
+        .current_dir(std::env::current_dir().unwrap().join("projects"))
+        .arg("clone")
+        .arg(project.repo_url)
+        .arg("--depth")
+        .arg("1")
+        .arg("--branch")
+        .arg(project.repo_tag)
+        .status()
+        .expect("Could not clone project.")
 }
 
 #[test]

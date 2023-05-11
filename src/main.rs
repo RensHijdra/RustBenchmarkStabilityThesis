@@ -1,7 +1,7 @@
 use std::env;
 use std::process::Command;
 
-use caps::{Capability, CapSet, CapsHashSet};
+use caps::{CapSet, Capability, CapsHashSet};
 use clap::Parser;
 
 use crate::project::clone_projects_from_targets;
@@ -109,10 +109,10 @@ fn list_rev_deps(page: u64) {
 }*/
 
 mod collect;
-mod project;
-mod stats;
 mod parse;
 mod probe;
+mod project;
+mod stats;
 
 #[derive(Parser, Debug)] // requires `derive` feature
 #[command(name = "power")]
@@ -124,7 +124,9 @@ enum Cli {
     Project(ProjectCommand),
     #[command(subcommand, name = "stat")]
     Statistics(StatisticsCommand),
-    #[command(about = "Set capability SYS_RAWIO to permitted and set the effective bit for this executable. Needs root.")]
+    #[command(
+        about = "Set capability SYS_RAWIO to permitted and set the effective bit for this executable. Needs root."
+    )]
     Elevate,
 }
 
@@ -156,72 +158,97 @@ enum StatisticsCommand {
     Merge,
 }
 
-
 fn main() {
     let parse = Cli::parse();
     match parse {
         Cli::Experiment(settings) => {
             check_capabilities();
-            collect::run(settings.repetitions, settings.measurement_time, settings.warmup_time, settings.sample_size)
+            collect::run(
+                settings.repetitions,
+                settings.measurement_time,
+                settings.warmup_time,
+                settings.sample_size,
+            )
         }
-        Cli::Project(subcommand) => {
-            match subcommand {
-                ProjectCommand::Parse => {
-                    project::find_all_benchmarks()
-                        .iter()
-                        .for_each(|project| project.store().expect("Could not store project"));
-                }
-                ProjectCommand::Download => {
-                    println!("Cloning projects that were found in targets.csv");
-                    clone_projects_from_targets();
-                }
+        Cli::Project(subcommand) => match subcommand {
+            ProjectCommand::Parse => {
+                project::find_all_benchmarks()
+                    .iter()
+                    .for_each(|project| project.store().expect("Could not store project"));
             }
-        }
-        Cli::Statistics(subcommand) => {
-            match subcommand {
-                StatisticsCommand::Parse => {}
-                StatisticsCommand::Merge => {}
+            ProjectCommand::Download => {
+                println!("Cloning projects that were found in targets.csv");
+                clone_projects_from_targets();
             }
-        }
+        },
+        Cli::Statistics(subcommand) => match subcommand {
+            StatisticsCommand::Parse => {}
+            StatisticsCommand::Merge => {}
+        },
         Cli::Elevate => {
             println!("{:?}", CapSet::Effective);
             // Check own process rights
             let executable = env::current_exe().unwrap();
-            match Command::new("setcap").arg("CAP_SYS_RAWIO=ep").arg(&executable).output() {
+            match Command::new("setcap")
+                .arg("CAP_SYS_RAWIO=ep")
+                .arg(&executable)
+                .output()
+            {
                 Ok(out) => {
                     if out.status.success() {
-                        println!("Succesfully set capability CAP_SETFCAP for {}", &executable.to_str().unwrap())
+                        println!(
+                            "Succesfully set capability CAP_SETFCAP for {}",
+                            &executable.to_str().unwrap()
+                        )
                     } else {
                         panic!("Failed to set capability for self, try running with sudo")
                     }
                 }
-                Err(err) => panic!("Error setting own capabilities: {}", err)
+                Err(err) => panic!("Error setting own capabilities: {}", err),
             }
         }
     }
 }
-
 
 fn check_capabilities() {
     check_or_panic_rawio(CapSet::Permitted);
     check_or_panic_rawio(CapSet::Effective);
 
-    match caps::set(None, CapSet::Inheritable, &CapsHashSet::from([Capability::CAP_SYS_RAWIO])) {
+    match caps::set(
+        None,
+        CapSet::Inheritable,
+        &CapsHashSet::from([Capability::CAP_SYS_RAWIO]),
+    ) {
         Ok(_) => println!("Successfully set rawio to inheritable"),
-        Err(err) => panic!("Failed to set rawio to inheritable with error: {}", err)
+        Err(err) => panic!("Failed to set rawio to inheritable with error: {}", err),
     }
 
-    match caps::set(None, CapSet::Ambient, &CapsHashSet::from([Capability::CAP_SYS_RAWIO])) {
+    match caps::set(
+        None,
+        CapSet::Ambient,
+        &CapsHashSet::from([Capability::CAP_SYS_RAWIO]),
+    ) {
         Ok(_) => println!("Successfully set rawio to ambient"),
-        Err(err) => panic!("Failed to set rawio to ambient with error: {}", err)
+        Err(err) => panic!("Failed to set rawio to ambient with error: {}", err),
     }
 }
 
 fn check_or_panic_rawio(set: CapSet) {
     match caps::has_cap(None, set, Capability::CAP_SYS_RAWIO) {
-        Ok(bool) => if !bool {
-            panic!("CAP_SYS_RAWIO is not in the {:?} set. Did you run `sudo {} elevate`?", set, env::current_exe().unwrap().file_name().unwrap().to_str().unwrap())
+        Ok(bool) => {
+            if !bool {
+                panic!(
+                    "CAP_SYS_RAWIO is not in the {:?} set. Did you run `sudo {} elevate`?",
+                    set,
+                    env::current_exe()
+                        .unwrap()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                )
+            }
         }
-        Err(err) => panic!("Failed to read {:?} capabilities set. {}", set, err)
+        Err(err) => panic!("Failed to read {:?} capabilities set. {}", set, err),
     }
 }
