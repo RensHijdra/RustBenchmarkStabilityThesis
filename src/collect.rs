@@ -10,7 +10,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use caps::{Capability, CapSet, CapsHashSet};
 use caps::errors::CapsError;
@@ -200,20 +200,20 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
 
     let compile_project_bar = m.add(ProgressBar::new(target_projects.len() as u64));
     compile_project_bar.set_style(sty.clone());
-    compile_project_bar.set_message("Compiling projects");
+    compile_project_bar.enable_steady_tick(Duration::from_secs(1));
     // Compile all files and give permissions to all executables
     // Create command per benchmark
     for record in &target_projects {
-        compile_project_bar.set_message(format!("Compiling project: {:?}", record));
+        compile_project_bar.set_message(format!("Compiling project: {}", record.name));
 
         let target_project = record;
         let project = Project::load(&target_project.name).unwrap();
 
         let bench_group_bar = m.insert_after(&compile_project_bar, ProgressBar::new(project.bench_files.len() as u64));
         bench_group_bar.set_style(sty.clone());
-
+        bench_group_bar.enable_steady_tick(Duration::from_secs(1));
         for group in &project.bench_files {
-            bench_group_bar.set_message(format!("Compiling project: {}; benchmark: {}", project.name, group.name));
+            bench_group_bar.set_message(format!("Compiling benchmark: {}", group.source));
 
             // Compile and save the executable
             let executable = compile_benchmark_file(&group);
@@ -240,6 +240,8 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
     // Set up progress bar for commands
     let mut benchmark_command_iterator = commands.iter_mut().progress();
     benchmark_command_iterator.progress.clone().with_style(sty.clone());
+    benchmark_command_iterator.progress.clone().enable_steady_tick(Duration::from_secs(1));
+
     m.add(benchmark_command_iterator.progress.clone());
 
     // Run commands
