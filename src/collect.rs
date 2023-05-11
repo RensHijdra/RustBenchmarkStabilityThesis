@@ -183,7 +183,7 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
     // m.println("Clearing existing projects");
 
 
-    if !env::var("ENERGY_DEBUG").is_ok() {
+    if !env::var("KEEP_PROJECTS").is_ok() {
         // Clear
         for record in &target_projects {
             let project = Project::load(&record.name).expect("Could not load project {");
@@ -216,10 +216,10 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
             bench_group_bar.set_message(format!("Compiling benchmark: {}", group.source));
 
             // Compile and save the executable
-            let executable = compile_benchmark_file(&group);
+            let (executable, workdir) = compile_benchmark_file(&group);
 
             for bench_id in group.benches.iter() {
-                commands.push(criterion_bench_command(&executable, &bench_id, measurement_time, warmup_time, sample_size));
+                commands.push(criterion_bench_command(&executable, &bench_id, &workdir, measurement_time, warmup_time, sample_size));
             }
             bench_group_bar.inc(1);
         }
@@ -262,11 +262,13 @@ fn run_command(command: &mut Command) -> bool {
 }
 
 
-fn criterion_bench_command(executable: &str, benchmark_id: &str, measurement_time: u64, warmup_time: u64, sample_size: u64) -> Command {
+fn criterion_bench_command(executable: &str, benchmark_id: &str, workdir: &PathBuf, measurement_time: u64, warmup_time: u64, sample_size: u64) -> Command {
     let mut bench_binary = Command::new(executable);
 
     // Configure the benchmark settings
-    bench_binary.arg("--bench")
+    bench_binary
+        .current_dir(workdir)
+        .arg("--bench")
         .args(["--measurement-time", &measurement_time.to_str()])
         .args(["--warm-up-time", &warmup_time.to_str()])
         .args(["--sample-size", &sample_size.to_str()])
@@ -286,7 +288,7 @@ fn cargo_clean_project(project: &str) -> () {
         .unwrap();
 }
 
-pub fn compile_benchmark_file(benchmark: &BenchFile) -> String {
+pub fn compile_benchmark_file(benchmark: &BenchFile) -> (String, PathBuf) {
     debugln!("Compiling {} in {}", benchmark.name, benchmark.get_workdir());
     let mut cargo = Command::new("cargo");
 
@@ -309,8 +311,8 @@ pub fn compile_benchmark_file(benchmark: &BenchFile) -> String {
     }
 
     match EXEC_REG.captures_iter(&stderr).next() {
-        None => String::new(),
-        Some(found_match) => found_match[1].to_string()
+        None => (String::new(), PathBuf::new()),
+        Some(found_match) => (found_match[1].to_string(), get_workdir_for_project(&benchmark.project))
     }
 }
 
