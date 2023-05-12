@@ -128,6 +128,8 @@ enum Cli {
         about = "Set capability SYS_RAWIO to permitted and set the effective bit for this executable. Needs root."
     )]
     Elevate,
+    #[command(about = "Run `cargo check --benches` on all projects")]
+    Check,
 }
 
 #[derive(clap::Args, Debug)]
@@ -206,6 +208,9 @@ fn main() {
                 }
                 Err(err) => panic!("Error setting own capabilities: {}", err),
             }
+        }
+        Cli::Check => {
+            project::cargo_check_all_projects();
         }
     }
 }

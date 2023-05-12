@@ -1,8 +1,8 @@
-use cargo_toml::{Manifest, Product};
-use lazy_static::lazy_static;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
+use cargo_toml::{Manifest, Product};
+use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -24,10 +24,6 @@ impl Project {
             &std::fs::read_to_string(format!("{}.json", project))
                 .expect(&format!("Could not read project {}.json", project)),
         )
-    }
-
-    pub fn clean_name(&self) -> String {
-        self.name.replace("-", "_")
     }
 }
 
@@ -63,7 +59,7 @@ impl BenchFile {
 }
 
 fn get_manifest(path: &PathBuf) -> Manifest {
-    cargo_toml::Manifest::from_path(path.join("Cargo.toml").as_path()).expect(
+    Manifest::from_path(path.join("Cargo.toml").as_path()).expect(
         format!(
             "Could not find Cargo.toml for {}",
             path.as_path().to_str().to_owned().unwrap()
@@ -154,9 +150,9 @@ pub fn find_benchmarks_for_project(project_name: &str) -> Project {
         println!("{:?}", abs_path);
         command
             .current_dir(abs_path.to_str().unwrap().to_string())
-            .arg("bench")
-            .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
-            .env("CARGO_PROFILE_BENCH_LTO", "no"); // Debug info is stripped if LTO is on
+            .arg("bench");
+        // .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
+        // .env("CARGO_PROFILE_BENCH_LTO", "no"); // Debug info is stripped if LTO is on
 
         if product.required_features.len() > 0 {
             command
@@ -298,5 +294,25 @@ pub(crate) fn clone_projects_from_targets() {
 
     for project in read_target_projects() {
         get_git_project(project);
+    }
+}
+
+pub(crate) fn cargo_check_all_projects() {
+    for project in read_target_projects() {
+        let success = Command::new("cargo")
+            .current_dir(get_workdir_for_project(&project.name))
+            .args(&["check", "--benches"])
+            .status()
+            .unwrap()
+            .success();
+        if !success {
+            println!("Check failed for {}", &project.name);
+            println!(
+                "{:?}",
+                Command::new("cargo")
+                    .current_dir(get_workdir_for_project(&project.name))
+                    .args(&["check", "--benches"])
+            );
+        }
     }
 }
