@@ -173,7 +173,8 @@ fn main() {
 }
 
 pub fn run(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64) {
-    for _ in 0..iterations {
+    for i in 0..iterations {
+        println!("Running iteration #{}", i + 1);
         iteration(measurement_time, warmup_time, sample_size);
     }
 }
@@ -189,11 +190,10 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
     // Clear artifacts
     let target_projects = read_target_projects();
 
-    let cargo_clear_bar = m.add(ProgressBar::new(target_projects.len() as u64));
-    cargo_clear_bar.set_style(sty.clone());
-    // m.println("Clearing existing projects");
-
     if !env::var("KEEP_PROJECTS").is_ok() {
+        let cargo_clear_bar = m.add(ProgressBar::new(target_projects.len() as u64));
+        cargo_clear_bar.set_style(sty.clone());
+
         // Clear
         for record in &target_projects {
             let project = Project::load(&record.name).expect("Could not load project {");
@@ -201,20 +201,22 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
             cargo_clean_project(&project.name);
             cargo_clear_bar.inc(1);
         }
+
+        cargo_clear_bar.finish();
+        m.remove(&cargo_clear_bar);
     }
 
-    cargo_clear_bar.finish();
-    m.remove(&cargo_clear_bar);
-
-    let mut commands: Vec<Command> = Default::default();
+    let mut commands: Vec<(Command, String)> = Default::default();
 
     let compile_project_bar = m.add(ProgressBar::new(target_projects.len() as u64));
     compile_project_bar.set_style(sty.clone());
+    compile_project_bar.tick();
     compile_project_bar.enable_steady_tick(Duration::from_secs(1));
+
     // Compile all files and give permissions to all executables
     // Create command per benchmark
     for record in &target_projects {
-        compile_project_bar.set_message(format!("Compiling project: {}", record.name));
+        compile_project_bar.set_message(format!("Compiling project: {}", record.name.trim()));
 
         let target_project = record;
         let project = Project::load(&target_project.name).unwrap();
@@ -224,68 +226,105 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
             ProgressBar::new(project.bench_files.len() as u64),
         );
         bench_group_bar.set_style(sty.clone());
+        bench_group_bar.tick();
         bench_group_bar.enable_steady_tick(Duration::from_secs(1));
         for group in &project.bench_files {
-            bench_group_bar.set_message(format!("Compiling benchmark: {}", group.source));
+            bench_group_bar.set_message(format!("Compiling benchmark: {}", group.name.trim()));
 
             // Compile and save the executable
             let (executable, workdir) = compile_benchmark_file(&group);
+            debugln!("Executable {} and workdir {:?}", &executable, &workdir);
 
-            for bench_id in group.benches.iter() {
-                commands.push(criterion_bench_command(
-                    &executable,
-                    &bench_id,
-                    &workdir,
-                    measurement_time,
-                    warmup_time,
-                    sample_size,
+            for benchmark_id in group.benches.iter() {
+                commands.push((
+                    criterion_bench_command(
+                        &executable,
+                        &benchmark_id,
+                        &workdir,
+                        measurement_time,
+                        warmup_time,
+                        sample_size,
+                    ),
+                    format!("{}/{}/{}", project.name, group.name, benchmark_id),
                 ));
             }
             bench_group_bar.inc(1);
         }
-        bench_group_bar.finish();
         compile_project_bar.inc(1);
         m.remove(&bench_group_bar);
     }
-    compile_project_bar.finish();
     m.remove(&compile_project_bar);
 
     // Shuffle commands
     commands.shuffle(&mut thread_rng());
 
     let sty = ProgressStyle::with_template(
-        "[{elapsed_precise} | {eta_precise}] {wide_bar:40.cyan/blue} {pos:>7}/{len:7}",
+        "[{elapsed_precise} | {eta_precise}] {wide_bar:.cyan/blue} {pos:>4}/{len:4}",
     )
     .unwrap();
 
     // Set up progress bar for commands
-    let mut benchmark_command_iterator = commands.iter_mut().progress();
-    benchmark_command_iterator
-        .progress
-        .clone()
-        .with_style(sty.clone());
-    benchmark_command_iterator
-        .progress
+    let mut progress_bar = ProgressBar::new(commands.len() as u64);
+    progress_bar.clone().with_style(sty.clone());
+    progress_bar
         .clone()
         .enable_steady_tick(Duration::from_secs(1));
 
-    m.add(benchmark_command_iterator.progress.clone());
+    m.add(progress_bar.clone());
+    println!("Number of commands: {}", commands.len());
+
+    let mut failures: Vec<String> = Default::default();
 
     // Run commands
-    let success = benchmark_command_iterator.all(run_command);
+    commands.iter_mut().for_each(|(cmd, id)| {
+        // progress_bar
+        //     .clone()
+        //     .set_message(format!("Running benchmark: {}", id));
+        // assert!(cmd.get_current_dir().is_some());
+        let success = run_command(cmd);
+        progress_bar.inc(1);
+        if !success {
+            failures.push(format!("{cmd:?}"));
+        }
+    });
 
     // Check if all commands were succesful
-    if !success {
-        panic!("One of the benchmarks exited with a non-zero exit code.")
+    if failures.len() > 0 {
+        println!("The following benchmarks failed:");
+        println!("{}", failures.join("\n"));
     }
 
     // Save all data
-    todo!() // Copy target/criterion/... to a safe location
+    let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
+    for record in &target_projects {
+        let project = Project::load(&record.name).expect("Could not load project");
+        let from = get_workdir_for_project(&project.name)
+            .join("target")
+            .join("criterion");
+        let to = env::current_dir()
+            .unwrap()
+            .join("data")
+            .join(&timestamp)
+            .join(&project.name);
+
+        match fs::copy(&from, &to) {
+            Ok(_) => {}
+            Err(err) => panic!(
+                "Failed to copy data from {:?} to {:?} because of {}",
+                from.to_string_lossy(),
+                to.to_string_lossy(),
+                err
+            ),
+        }
+    }
 }
 
 fn run_command(command: &mut Command) -> bool {
     debugln!("{command:?}");
-    command.status().unwrap().success()
+    debugln!("workdir: {:?}", command.get_current_dir());
+    let output = command.output().unwrap();
+    debugln!("{}", String::from_utf8(output.stdout).unwrap());
+    output.status.success()
 }
 
 fn criterion_bench_command(
@@ -300,22 +339,21 @@ fn criterion_bench_command(
 
     // Configure the benchmark settings
     bench_binary
-        .current_dir(workdir)
+        .current_dir(workdir.as_path())
         .arg("--bench")
         .args(["--measurement-time", &measurement_time.to_str()])
         .args(["--warm-up-time", &warmup_time.to_str()])
         .args(["--sample-size", &sample_size.to_str()])
+        // Criterion uses a regex to select benchmarks,
+        // so we do this to prevent selecting multiple benchmarks to run
         .arg(format!("^{}$", benchmark_id));
-    // Criterion uses a regex to select benchmarks,
-    // so we do this to prevent selecting multiple benchmarks to run
-
     bench_binary
 }
 
 fn cargo_clean_project(project: &str) -> () {
     Command::new("cargo")
         .arg("clean")
-        .current_dir(get_workdir_for_project(project))
+        .current_dir(get_workdir_for_project(project).as_path())
         .output()
         .unwrap();
 }
@@ -339,19 +377,45 @@ pub fn compile_benchmark_file(benchmark: &BenchFile) -> (String, PathBuf) {
         cargo.arg("--features").arg(benchmark.features.join(","));
     }
 
+    debugln!("Compile command: {:?}", cargo);
+
     let output = cargo.output().unwrap();
     let stderr = std::str::from_utf8(&*output.stderr).unwrap().to_string();
-
     lazy_static! {
         static ref EXEC_REG: Regex =
             Regex::new(r"Executable .*? \((.*?target/release/deps/[\w_-]+)\)").unwrap();
     }
-
+    // println!("{:?}", &stderr);
     match EXEC_REG.captures_iter(&stderr).next() {
-        None => (String::new(), PathBuf::new()),
-        Some(found_match) => (
-            found_match[1].to_string(),
-            get_workdir_for_project(&benchmark.project),
-        ),
+        None => {
+            panic!(
+                "Did not find an executable while compiling {}: {:?}",
+                benchmark.project, cargo
+            );
+        }
+        Some(found_match) => {
+            debugln!(
+                "Found {} and {:?}",
+                found_match[1].to_string(),
+                &get_workdir_for_project(&benchmark.project)
+            );
+            (
+                found_match[1].to_string(),
+                get_workdir_for_project(&benchmark.project),
+            )
+        }
     }
+}
+
+#[test]
+fn test_current_dir() {
+    let mut command = Command::new("pwd");
+    command.current_dir("/home/rens/thesis/scrape-crates/projects/chrono");
+    println!("{command:?}");
+    assert_eq!(
+        String::from_utf8(command.output().unwrap().stdout)
+            .unwrap()
+            .trim(),
+        "/home/rens/thesis/scrape-crates/projects/chrono"
+    )
 }
