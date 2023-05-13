@@ -276,13 +276,13 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
     let mut failures: Vec<String> = Default::default();
 
     // Run commands
-    commands.iter_mut().for_each(|(cmd, id)| {
-        let success = run_command(cmd);
+    while let Some((mut cmd, path)) = commands.pop() {
+        let success = run_command(&mut cmd);
         progress_bar.inc(1);
         if !success {
             failures.push(format!("{cmd:?}"));
         }
-    });
+    }
 
     // Check if all commands were succesful
     if failures.len() > 0 {
@@ -294,11 +294,20 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
     let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
     for record in &target_projects {
         let project = Project::load(&record.name).expect("Could not load project");
-        copy_data_for_project(project, &timestamp);
+        move_data_for_project(project, &timestamp);
     }
 }
 
-fn copy_data_for_project(project: Project, timestamp: &str) {
+#[test]
+fn test_move() {
+    let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
+    for record in read_target_projects() {
+        let project = Project::load(&record.name).expect("Could not load project");
+        move_data_for_project(project, &timestamp);
+    }
+}
+
+fn move_data_for_project(project: Project, timestamp: &str) {
     let from = get_workdir_for_project(&project.name)
         .join("target")
         .join("criterion");
@@ -309,7 +318,10 @@ fn copy_data_for_project(project: Project, timestamp: &str) {
         .join(&project.name);
 
     Command::new("mv")
-        .args(["-r", &from.to_string_lossy(), &to.to_string_lossy()])
+        .args([
+            &from.to_string_lossy().to_str(),
+            &to.to_string_lossy().to_string(),
+        ])
         .status()
         .unwrap();
 }
