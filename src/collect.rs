@@ -277,10 +277,6 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
 
     // Run commands
     commands.iter_mut().for_each(|(cmd, id)| {
-        // progress_bar
-        //     .clone()
-        //     .set_message(format!("Running benchmark: {}", id));
-        // assert!(cmd.get_current_dir().is_some());
         let success = run_command(cmd);
         progress_bar.inc(1);
         if !success {
@@ -296,27 +292,24 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
 
     // Save all data
     let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
-    for record in &target_projects {
-        let project = Project::load(&record.name).expect("Could not load project");
-        let from = get_workdir_for_project(&project.name)
-            .join("target")
-            .join("criterion");
-        let to = env::current_dir()
-            .unwrap()
-            .join("data")
-            .join(&timestamp)
-            .join(&project.name);
+    for record in &target_projects {}
+}
 
-        match fs::copy(&from, &to) {
-            Ok(_) => {}
-            Err(err) => panic!(
-                "Failed to copy data from {:?} to {:?} because of {}",
-                from.to_string_lossy(),
-                to.to_string_lossy(),
-                err
-            ),
-        }
-    }
+fn copy_data_for_project(project: Project, timestamp: &str) {
+    let project = Project::load(&project.name).expect("Could not load project");
+    let from = get_workdir_for_project(&project.name)
+        .join("target")
+        .join("criterion");
+    let to = env::current_dir()
+        .unwrap()
+        .join("data")
+        .join(timestamp)
+        .join(&project.name);
+
+    Command::new("cp")
+        .args(["-r", &from.to_string_lossy(), &to.to_string_lossy()])
+        .status()
+        .unwrap();
 }
 
 fn run_command(command: &mut Command) -> bool {

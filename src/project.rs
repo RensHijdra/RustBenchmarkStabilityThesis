@@ -301,9 +301,10 @@ pub(crate) fn cargo_check_all_projects() {
     for project in read_target_projects() {
         let success = Command::new("cargo")
             .current_dir(get_workdir_for_project(&project.name))
-            .args(&["check", "--benches"])
-            .status()
+            .args(&["check", "--benches", "--quiet"])
+            .output()
             .unwrap()
+            .status
             .success();
         if !success {
             println!("Check failed for {}", &project.name);
@@ -315,4 +316,5 @@ pub(crate) fn cargo_check_all_projects() {
             );
         }
     }
+    println!("Done");
 }
