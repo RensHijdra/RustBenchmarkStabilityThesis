@@ -292,11 +292,13 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
 
     // Save all data
     let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
-    for record in &target_projects {}
+    for record in &target_projects {
+        let project = Project::load(&record.name).expect("Could not load project");
+        copy_data_for_project(project, &timestamp);
+    }
 }
 
 fn copy_data_for_project(project: Project, timestamp: &str) {
-    let project = Project::load(&project.name).expect("Could not load project");
     let from = get_workdir_for_project(&project.name)
         .join("target")
         .join("criterion");
@@ -306,7 +308,7 @@ fn copy_data_for_project(project: Project, timestamp: &str) {
         .join(timestamp)
         .join(&project.name);
 
-    Command::new("cp")
+    Command::new("mv")
         .args(["-r", &from.to_string_lossy(), &to.to_string_lossy()])
         .status()
         .unwrap();
