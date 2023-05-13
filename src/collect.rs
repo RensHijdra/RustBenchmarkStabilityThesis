@@ -317,6 +317,11 @@ fn move_data_for_project(project: Project, timestamp: &str) {
         .join(timestamp)
         .join(&project.name);
 
+    Command::new("mkdir")
+        .args(["-p", &to.to_string_lossy()])
+        .output()
+        .unwrap();
+
     Command::new("mv")
         .args([
             &from.to_string_lossy().to_str(),
