@@ -300,7 +300,9 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
 
 #[test]
 fn test_move() {
-    let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
+    let timestamp = chrono::offset::Local::now()
+        .format("%Y%m%d%H%M%S")
+        .to_string();
     for record in read_target_projects() {
         let project = Project::load(&record.name).expect("Could not load project");
         move_data_for_project(project, &timestamp);
