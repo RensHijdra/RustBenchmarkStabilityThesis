@@ -169,6 +169,7 @@ fn write_vec() {
 fn main() {
     // Set debug mode
     env::set_var("ENERGY_DEBUG", "");
+    env::set_var("KEEP_PROJECTS", "");
     run(1, 5, 1, 5);
 }
 
@@ -349,12 +350,16 @@ fn criterion_bench_command(
     warmup_time: u64,
     sample_size: u64,
 ) -> Command {
-    let mut bench_binary = Command::new(executable);
+    let mut bench_binary = Command::new("cset");
+
+    // Setup `cpuset`
+    bench_binary.args(["--exec", "BENCH", "--"]);
 
     // Configure the benchmark settings
     bench_binary
         .current_dir(workdir.as_path())
-        .arg("--bench")
+        // The Benchmark
+        .args(&[executable, "--bench"])
         .args(["--measurement-time", &measurement_time.to_str()])
         .args(["--warm-up-time", &warmup_time.to_str()])
         .args(["--sample-size", &sample_size.to_str()])

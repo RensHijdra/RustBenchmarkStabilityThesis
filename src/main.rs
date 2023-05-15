@@ -125,9 +125,9 @@ enum Cli {
     #[command(subcommand, name = "stat")]
     Statistics(StatisticsCommand),
     #[command(
-        about = "Set capability SYS_RAWIO to permitted and set the effective bit for this executable. Needs root."
+        about = "Run the necessary commands to set up the environment. Needs root."
     )]
-    Elevate,
+    Prep,
     #[command(about = "Run `cargo check --benches` on all projects")]
     Check,
 }
@@ -187,7 +187,7 @@ fn main() {
             StatisticsCommand::Parse => {}
             StatisticsCommand::Merge => {}
         },
-        Cli::Elevate => {
+        Cli::Prep => {
             println!("{:?}", CapSet::Effective);
             // Check own process rights
             let executable = env::current_exe().unwrap();
@@ -213,6 +213,18 @@ fn main() {
             project::cargo_check_all_projects();
         }
     }
+}
+
+fn freqset() {
+    todo!()
+}
+fn create_cpuset() {
+    // Create cpuset with exclusive cpu
+    // chown the set
+}
+fn disable_other_cores() {
+    //echo 0 | sudo tee /sys/devices/system/cpu/cpu{2..11}/online
+    todo!()
 }
 
 fn check_capabilities() {
