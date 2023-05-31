@@ -34,7 +34,7 @@ pub struct TargetProject {
     pub repo_tag: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct BenchFile {
     pub project: String,
     pub name: String,

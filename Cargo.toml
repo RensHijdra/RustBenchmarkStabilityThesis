@@ -5,6 +5,19 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "power"
+path = "src/main.rs"
+
+[[bin]]
+name = "parse"
+path = "src/parse.rs"
+
+
+[package.metadata.rust-analyzer]
+# This package uses rustc crates.
+rustc_private=true
+
 [dependencies]
 crates_io_api = { version = "0.8.1", default-features = false, features = ["rustls"] }
 
@@ -40,3 +53,6 @@ chrono = "0.4.24"
 caps = "0.5.5"
 indicatif = "0.17.3"
 syscalls = { version = "0.6.10", features = ["x86_64"] }
+byteorder = "1.4.3"
+rustc-demangle = "0.1.23"
+serde_tuple = "0.5.0"

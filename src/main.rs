@@ -113,6 +113,9 @@ mod parse;
 mod probe;
 mod project;
 mod stats;
+// mod hirmir;
+mod cov;
+mod llvmcovdata;
 
 #[derive(Parser, Debug)] // requires `derive` feature
 #[command(name = "power")]
@@ -124,9 +127,7 @@ enum Cli {
     Project(ProjectCommand),
     #[command(subcommand, name = "stat")]
     Statistics(StatisticsCommand),
-    #[command(
-        about = "Run the necessary commands to set up the environment. Needs root."
-    )]
+    #[command(about = "Run the necessary commands to set up the environment. Needs root.")]
     Prep,
     #[command(about = "Run `cargo check --benches` on all projects")]
     Check,

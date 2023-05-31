@@ -44,7 +44,7 @@ fn test_find_mangled_functions() {
         .filter(|p| p.name == "ahash")
         .next()
         .expect("Are the projects loaded?");
-    let (exe, _workdir) = compile_benchmark_file(&bench);
+    let (exe, _workdir) = compile_benchmark_file(&bench, Default::default());
     let mangled_functions = find_mangled_functions(&exe);
     println!("{:?}", mangled_functions);
     println!("{}", mangled_functions.len());

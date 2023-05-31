@@ -1,6 +1,7 @@
 #![allow(unused)]
 
-use std::ffi::{CString, OsString};
+use std::collections::HashMap;
+use std::ffi::{CString, OsStr, OsString};
 use std::fs::File;
 use std::io::Error;
 use std::io::Write;
@@ -176,11 +177,11 @@ fn main() {
 pub fn run(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64) {
     for i in 0..iterations {
         println!("Running iteration #{}", i + 1);
-        iteration(measurement_time, warmup_time, sample_size);
+        iteration(&measurement_time, &warmup_time, &sample_size);
     }
 }
 
-fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
+fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
     let m = MultiProgress::new();
     let sty = ProgressStyle::with_template(
         "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
@@ -233,7 +234,7 @@ fn iteration(measurement_time: u64, warmup_time: u64, sample_size: u64) {
             bench_group_bar.set_message(format!("Compiling benchmark: {}", group.name.trim()));
 
             // Compile and save the executable
-            let (executable, workdir) = compile_benchmark_file(&group);
+            let (executable, workdir) = compile_benchmark_file(&group, HashMap::new());
             debugln!("Executable {} and workdir {:?}", &executable, &workdir);
 
             for benchmark_id in group.benches.iter() {
@@ -346,9 +347,9 @@ fn criterion_bench_command(
     executable: &str,
     benchmark_id: &str,
     workdir: &PathBuf,
-    measurement_time: u64,
-    warmup_time: u64,
-    sample_size: u64,
+    measurement_time: &u64,
+    warmup_time: &u64,
+    sample_size: &u64,
 ) -> Command {
     let mut bench_binary = Command::new("cset");
 
@@ -377,13 +378,20 @@ fn cargo_clean_project(project: &str) -> () {
         .unwrap();
 }
 
-pub fn compile_benchmark_file(benchmark: &BenchFile) -> (String, PathBuf) {
+pub fn compile_benchmark_file(
+    benchmark: &BenchFile,
+    extra_env: std::collections::HashMap<&str, &str>,
+) -> (String, PathBuf) {
     debugln!(
         "Compiling {} in {}",
         benchmark.name,
         benchmark.get_workdir()
     );
     let mut cargo = Command::new("cargo");
+
+    // if !extra_env.is_empty() {
+    cargo.envs(extra_env);
+    // }
 
     cargo
         .arg("bench") // cargo bench

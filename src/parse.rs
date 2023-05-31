@@ -1,3 +1,4 @@
+#![allow(unused)]
 // #[derive(Debug, Serialize)]
 // pub struct LocalAstResponse {
 //     /// The id associated to a request for an `AST`
@@ -32,13 +33,18 @@
 
 extern crate core;
 
+use ra_ap_hir::db::HirDatabase;
+use ra_ap_ide::{Analysis, Cancellable, FilePosition, NavigationTarget, TextSize};
 use ra_ap_paths::AbsPath;
 use ra_ap_project_model::ProjectManifest;
 use ra_ap_rust_analyzer::cli::load_cargo::LoadCargoConfig;
 use ra_ap_syntax::{SourceFile, SyntaxKind, SyntaxNode};
 use ra_ap_vfs::VfsPath;
+use reqwest::get;
 use std::fs;
+use std::ops::Index;
 use std::path::Path;
+use std::process::Command;
 
 fn main() {
     // let path = Path::new("../chrono/benches/chrono.rs");
@@ -100,7 +106,7 @@ fn main() {
         println!("{}", h);
     }
     // ra_ap_rust_analyzer::cli::load_cargo::load_workspace("../projects/chrono", &Default::default(), &LoadCargoConfig {load_out_dirs_from_check: false, with_proc_macro: false, prefill_caches: false});
-    let buf = fs::canonicalize(Path::new("../projects/chrono")).unwrap();
+    let buf = fs::canonicalize(Path::new("./projects/chrono")).unwrap();
     let abs_path = AbsPath::assert(buf.as_path());
     let manifest = ProjectManifest::discover_single(&abs_path).unwrap();
     println!("{:?}", manifest);
@@ -119,6 +125,7 @@ fn main() {
         &load_cargo_config,
     )
     .unwrap();
+
     let path = VfsPath::new_real_path(buf.join("benches/chrono.rs").to_str().unwrap().to_string());
     let id = vfs.file_id(&path).unwrap();
 
@@ -128,20 +135,68 @@ fn main() {
 
     // println!("{:?}", structure);
 
-    let result = analysis.parse(id).unwrap();
-    let node = SourceFile::parse(&result.to_string()).syntax_node();
+    // let result = analysis.parse(id).unwrap();
+    // let node = SourceFile::parse(&result.to_string()).syntax_node();
     // println!("{}", result);
-    println!("{:?}", node.kind());
-    syntax_node_decender(node, 0);
+    // println!("{:?}", node.kind());
+    // syntax_node_decender(node, 0);
     // println!("{}", node);
-    // let vec = analysis.call_hierarchy(FilePosition { file_id: id, offset: TextSize::from(4038) }).unwrap().unwrap().info;
-    // println!("{:?}", vec);
+
+    let bench_function = FilePosition {
+        file_id: id,
+        offset: TextSize::from(297),
+    };
+    let hierarchy = analysis.call_hierarchy(bench_function).unwrap();
+    let calls = analysis.outgoing_calls(bench_function).unwrap();
+    let incalls = analysis.incoming_calls(bench_function).unwrap();
+    let impls = analysis.goto_implementation(bench_function).unwrap();
+    let decs = analysis.goto_declaration(bench_function).unwrap();
+    let defs = analysis.goto_definition(bench_function).unwrap();
+    let typdef = analysis.goto_type_definition(bench_function).unwrap();
+
+    println!("hierarchy: {:?}", hierarchy);
+    println!("outcalls: {:?}", calls);
+    println!("incalls: {:?}", incalls);
+    println!("impls {:?}", impls);
+    println!("declarations {:?}", decs);
+    println!("definitions: {:?}", defs);
+    println!("typedefs: {:?}", typdef);
+    let db = analysis_host.raw_database();
+
+    println!("hir: {:?}", analysis.view_hir(bench_function));
+
+    // analysis_host.analysis().crate_edition().unwrap().
+    // for navtarget in typdef.unwrap().info {
+    //     navtarget.
+    // }
+    // let mut target = hierarchy.unwrap().info[0].clone();
+    // while let Some(parent) = get_parent(&analysis, &target) {
+    //     println!("{:?}", parent);
+    //     target = parent;
+    // }
+
     // for node in structure {
     //     node.navigation_range
     // }
     // analysis.call_hierarchy(FilePosition);
 
     // println!("{:?}", analysis_host.raw_database());
+}
+
+fn get_parent(analysis: &Analysis, navtarget: &NavigationTarget) -> String {
+    let vec = analysis
+        .parent_module(FilePosition {
+            file_id: navtarget.file_id,
+            offset: navtarget.full_range.start(),
+        })
+        .unwrap();
+    let name = &vec[0].name;
+    // if name == "" {
+    //     let crate_id = analysis.crates_for(navtarget.file_id).unwrap()[0];
+    //     crate_id as Idx<CrateData>
+    //
+    // }
+    String::new()
 }
 
 fn syntax_node_decender(node: SyntaxNode, depth: usize) {
