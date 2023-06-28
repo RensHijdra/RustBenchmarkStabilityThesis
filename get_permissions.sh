@@ -8,6 +8,7 @@ chmod -R g+wx /sys/kernel/tracing/uprobe_events
 sysctl kernel.perf_event_paranoid=-1 -w
 sysctl kernel.kptr_restrict=0 -w
 setcap cap_sys_rawio=ep `which rdmsr`
+
 chgrp -R msr /dev/cpu/*/msr
 chmod g+r /dev/cpu/*/msr
 

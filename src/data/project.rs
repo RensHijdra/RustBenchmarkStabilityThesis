@@ -34,7 +34,7 @@ pub struct TargetProject {
     pub repo_tag: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BenchFile {
     pub project: String,
     pub name: String,
@@ -48,13 +48,6 @@ impl BenchFile {
         let mut buf = Path::new(&self.source).to_path_buf();
         buf.pop();
         buf.to_str().unwrap().to_string()
-    }
-
-    pub fn get_clean_name(&self) -> String {
-        self.name
-            .replace(" ", "_")
-            .replace("/", "_")
-            .replace("-", "_")
     }
 }
 

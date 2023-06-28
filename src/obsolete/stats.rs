@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 use chrono::NaiveDateTime;
 
-use crate::project::read_target_projects;
+use crate::data::project::read_target_projects;
 use csv::Trim;
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
@@ -23,7 +23,7 @@ use ra_ap_ide::ExprFillDefaultMode::Default;
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use regex::Regex;
-use rstats::{noop, MStats, Median, Stats, RE};
+use rstats::{noop, MStats, Median, Stats, RE, Medianf64};
 use serde::{Deserialize, Serialize};
 use statrs::assert_almost_eq;
 use statrs::distribution::{Beta, ContinuousCDF};
@@ -414,37 +414,37 @@ fn data_to_statistics(
         dispersion: std,
     } = data.ameanstd().unwrap();
     let (q1, median, q3) = data.quartiles();
-    let median = data.median(&mut noop).unwrap();
+    let median = data.median().unwrap();
     let samples = data.len();
 
     // Only PartialOrd is implemented and not Ord since f64 is only partially ordered
-    let min = *(&data)
+    let min = (&data)
         .iter()
         .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    let max = *(&data)
+        .unwrap().clone();
+    let max = (&data)
         .iter()
         .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+        .unwrap().clone();
 
-    let mad = data.mad(median, &mut noop).unwrap();
-    let rmad = mad / median;
+    let mad = data.mad(median).unwrap();
+    let rmad = mad / &median;
 
-    let var = std * std;
+    let var = std.powi(2);
 
     let confidence_level = 0.99;
 
     // Harrel Davis RCIW
-    let lo = (&data).hd(confidence_level + ((1.0 - confidence_level) / 2.0));
-    let hi = (&data).hd((1.0 - confidence_level) / 2.0);
+    let lo = (&data).hd(confidence_level + ((1.0 - &confidence_level) / 2.0));
+    let hi = (&data).hd((1.0 - &confidence_level) / 2.0);
     let rciw_mjhd = (lo - hi) / (&data).hd(0.5);
 
     // Bootstrap RCIW
     let bootstrap_samples = bootstrap(data, 10000);
 
     let lo =
-        bootstrap_samples.percentile((confidence_level + ((1.0 - confidence_level) / 2.0)) * 100.0);
-    let hi = bootstrap_samples.percentile(((1.0 - confidence_level) / 2.0) * 100.0);
+        bootstrap_samples.percentile((&confidence_level + ((1.0 - &confidence_level) / 2.0)) * 100.0);
+    let hi = bootstrap_samples.percentile(((1.0 - &confidence_level) / 2.0) * 100.0);
     let rciw_boot = (lo - hi) / mean;
 
     let output = Statistic {
@@ -455,11 +455,11 @@ fn data_to_statistics(
         samples,
         min,
         max,
-        mean,
-        median,
+        mean: mean.clone(),
+        median: median.clone(),
         q1,
         q3,
-        mad,
+        mad: mad.clone(),
         rmad,
         std,
         var,
@@ -476,7 +476,6 @@ fn bootstrap(data: &Vec<f64>, samples: usize) -> Vec<f64> {
         .map(|idx| data[idx])
         .take(samples)
         .collect()
-    // vec
 }
 
 trait Quantile<T> {
@@ -486,12 +485,6 @@ trait Quantile<T> {
 }
 
 impl Quantile<f64> for Vec<f64> {
-    fn percentile(&self, pct: f64) -> f64 {
-        let mut tmp = self.to_vec();
-        local_sort(&mut tmp);
-        percentile_of_sorted(&tmp, pct)
-    }
-
     fn quartiles(&self) -> (f64, f64, f64) {
         let mut tmp = self.to_vec();
         local_sort(&mut tmp);
@@ -502,6 +495,12 @@ impl Quantile<f64> for Vec<f64> {
         let third = 75_f64;
         let c = percentile_of_sorted(&tmp, third);
         (a, b, c)
+    }
+
+    fn percentile(&self, pct: f64) -> f64 {
+        let mut tmp = self.to_vec();
+        local_sort(&mut tmp);
+        percentile_of_sorted(&tmp, pct)
     }
 
     /*
@@ -517,10 +516,10 @@ impl Quantile<f64> for Vec<f64> {
     fn hd(&self, percentile: f64) -> f64 {
         let n = self.len() as f64;
         let m1 = (n + 1.0) * percentile;
-        let m2 = (n + 1.0) * (1.0 - percentile);
+        let m2 = (&n + 1.0) * (1.0 - &percentile);
         let beta = Beta::new(m1, m2).unwrap();
-        let vec = (1..=n as i32)
-            .map(|x| beta.cdf(x as f64 / n) - beta.cdf((x as f64 - 1.0) / n))
+        let vec = (1..= n.clone() as i32)
+            .map(|x| beta.cdf(x as f64 / &n) - beta.cdf((x.clone() as f64 - 1.0) / &n))
             .collect::<Vec<f64>>();
         let mut tmp = self.to_vec();
         local_sort(&mut tmp);
@@ -537,23 +536,23 @@ fn local_sort(v: &mut [f64]) {
 fn percentile_of_sorted(sorted_samples: &[f64], pct: f64) -> f64 {
     assert!(!sorted_samples.is_empty());
     if sorted_samples.len() == 1 {
-        return sorted_samples[0];
+        return sorted_samples[0].clone();
     }
     let zero: f64 = 0.0;
     assert!(zero <= pct);
     let hundred = 100_f64;
     assert!(pct <= hundred);
     if pct == hundred {
-        return sorted_samples[sorted_samples.len() - 1];
+        return sorted_samples[sorted_samples.len() - 1].clone();
     }
     let length = (sorted_samples.len() - 1) as f64;
     let rank = (pct / hundred) * length;
     let lrank = rank.floor();
     let d = rank - lrank;
-    let n = lrank as usize;
-    let lo = sorted_samples[n];
-    let hi = sorted_samples[n + 1];
-    lo + (hi - lo) * d
+    let n = lrank.clone() as usize;
+    let lo = sorted_samples[n].clone();
+    let hi = sorted_samples[&n + 1].clone();
+    lo + (hi - &lo) * d
 }
 
 // #[test]

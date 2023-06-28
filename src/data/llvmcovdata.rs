@@ -1,9 +1,11 @@
+use proc_macro2::Span;
 // Generated using quicktype
 // Modified to fit use-case and specification:
 // https://github.com/llvm/llvm-project/blob/main/llvm/tools/llvm-cov/CoverageExporterJson.cpp
-use rustc_demangle::demangle;
 use serde::{Deserialize, Serialize};
 use serde_tuple::*;
+
+// use tree_sitter::{Point, Range};
 
 pub trait Filter {
     fn filter_non_zero(&mut self) -> ();
@@ -73,7 +75,7 @@ pub struct Expansion {
     filenames: Vec<String>,
     source_region: Region,
     target_regions: Vec<Region>,
-    branches: Vec<Branch>
+    branches: Vec<Branch>,
 }
 
 /*
@@ -95,9 +97,13 @@ pub struct Branch {
     false_execution_count: i64,
     file_id: i64,
     expanded_file_id: i64,
-    kind: i64
+    kind: i64,
 }
-
+/*
+json::Array renderSegment(const coverage::CoverageSegment &Segment) {
+  return json::Array({Segment.Line, Segment.Col, int64_t(Segment.Count),
+                      Segment.HasCount, Segment.IsRegionEntry});
+} */
 #[derive(Debug, Clone, Serialize_tuple, Deserialize_tuple)]
 pub struct Segment {
     pub(crate) line: i64,
@@ -108,13 +114,6 @@ pub struct Segment {
     pub(crate) is_gap_region: bool,
 }
 
-/*
-json::Array renderSegment(const coverage::CoverageSegment &Segment) {
-  return json::Array({Segment.Line, Segment.Col, int64_t(Segment.Count),
-                      Segment.HasCount, Segment.IsRegionEntry});
-}
-
- */
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoverageSummary {
@@ -143,16 +142,6 @@ pub struct Function {
     pub(crate) regions: Vec<Region>,
 }
 
-impl Function {
-    fn demangle(&mut self) {
-        self.name = self.get_demangled()
-    }
-
-    pub(crate) fn get_demangled(&self) -> String {
-        demangle(&self.name).to_string()
-    }
-}
-
 /* json::Array renderRegion(const coverage::CountedRegion &Region) {
   return json::Array({Region.LineStart, Region.ColumnStart, Region.LineEnd,
                       Region.ColumnEnd, clamp_uint64_to_int64(Region.ExecutionCount),
@@ -160,13 +149,67 @@ impl Function {
                       int64_t(Region.Kind)});
 }
  */
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Region {
-    line_start: i64,
-    column_start: i64,
-    line_end: i64,
-    column_end: i64,
-    execution_count: i64,
-    file_id: i64,
-    expanded_file_id: i64,
-    kind: i64
+    pub(crate) line_start: i64,
+    pub(crate) column_start: i64,
+    pub(crate) line_end: i64,
+    pub(crate) column_end: i64,
+    pub(crate) execution_count: i64,
+    pub(crate) file_id: i64,
+    pub(crate) expanded_file_id: i64,
+    pub(crate) kind: i64,
 }
+
+impl Region {
+
+    pub fn start(&self) -> proc_macro2::LineColumn {
+        proc_macro2::LineColumn { line: self.line_start.clone() as usize, column: self.column_start.clone() as usize }
+    }
+
+    pub fn end(&self) -> proc_macro2::LineColumn {
+        proc_macro2::LineColumn { line: self.line_end.clone() as usize, column: self.column_end.clone() as usize }
+    }
+
+    #[inline]
+    pub fn contains_span(&self, span: &Span) -> bool {
+        Self::lte(&self.start(), &span.start()) && Self::lte(&span.end(), &self.end())
+    }
+
+    #[allow(unused)]
+    pub fn contained_in_span(&self, span: &Span) -> bool {
+        Self::lte(&span.start(), &self.start()) && Self::lte(&self.end(), &span.end())
+    }
+
+    #[inline]
+    pub fn overlaps_span(&self, span: &Span) -> bool {
+        Self::lte(&span.start(), &self.end()) && Self::lte(&self.start(), &span.end())
+    }
+
+    #[inline]
+    fn lte(lhs: &LineColumn, rhs: &LineColumn) -> bool {
+        lhs.line < rhs.line || (lhs.line == rhs.line && lhs.column <= rhs.column)
+    }
+
+}
+
+use proc_macro2::LineColumn;
+// #[inline]
+// pub(crate) fn point_lte(a: Point, b: Point) -> bool {
+//     return (a.row < b.row) || (a.row == b.row && a.column <= b.column);
+// }
+//
+// #[inline]
+// pub(crate) fn point_lt(a: Point, b: Point) -> bool {
+//     return (a.row < b.row) || (a.row == b.row && a.column < b.column);
+// }
+//
+// #[inline]
+// pub(crate) fn point_gt(a: Point, b: Point) -> bool {
+//     return (a.row > b.row) || (a.row == b.row && a.column > b.column);
+// }
+//
+// #[inline]
+// pub(crate) fn point_gte(a: Point, b: Point) -> bool {
+//     return (a.row > b.row) || (a.row == b.row && a.column >= b.column);
+// }

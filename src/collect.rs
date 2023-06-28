@@ -1,47 +1,19 @@
-#![allow(unused)]
-
-use std::collections::HashMap;
-use std::ffi::{CString, OsStr, OsString};
-use std::fs::File;
-use std::io::Error;
-use std::io::Write;
-use std::ops::Add;
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::io::{AsFd, AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{env, fs, ptr};
+use std::string::ToString;
+use std::time::{Duration};
+use std::{env};
 
-use caps::errors::CapsError;
-use caps::{CapSet, Capability, CapsHashSet};
-use indicatif::{MultiProgress, ProgressBar, ProgressIterator, ProgressStyle};
-use itertools::Itertools;
-use lazy_static::lazy_static;
-use nix::libc::execv;
-use nix::sys::stat;
-use nix::sys::stat::Mode;
-use nix::{libc, unistd};
-use ra_ap_hir::known::assert;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::seq::SliceRandom;
-use rand::{thread_rng, Rng};
-use regex::{Captures, Regex};
+use rand::{thread_rng};
 use rstats::Printing;
 use serde::{Deserialize, Serialize};
-use syscalls::{syscall, Errno, Sysno};
-use tempfile::tempdir;
 
-use crate::probe::{create_probe_for_mangled_functions, delete_probe, find_mangled_functions};
-use crate::project::{
-    get_workdir_for_project, read_target_projects, BenchFile, Project, TargetProject,
+use crate::data::compileroutput::CompilerOutputElement;
+use crate::data::project::{
+    get_workdir_for_project, read_target_projects, BenchFile, Project,
 };
-
-// use crate::probe::{create_named_probe_for_adresses, delete_probe, find_probe_addresses};
-// use crate::project::BenchFile;
-// use crate::project::{get_workdir_for_project, read_target_projects, Project, TargetProject};
-
-// mod ::probe;
-// mod project;
 
 // Enable setting probes and traces
 // sudo sysctl kernel.perf_event_paranoid=-1 -w
@@ -56,7 +28,7 @@ use crate::project::{
 // Enable setting the process to a certain core
 // sudo groupadd nice
 // sudo usermod -a -G nice $USER
-
+// newgrp nice
 // echo "@nice - nice -19" | sudo tee -a /etc/security/limits.conf
 // echo "@nice hard nice -19" | sudo tee -a /etc/security/limits.conf
 // echo "@nice soft nice -19" | sudo tee -a /etc/security/limits.conf
@@ -76,26 +48,26 @@ macro_rules! debugln {
     };
 }
 
-#[derive(Debug, Serialize)]
-struct IterationStat {
-    benchmark: Benchmark,
-    instructions: u64,
-    iterations: u64,
-    branches: u64,
-    branch_misses: u64,
-    cache_misses: u64,
-    cycles: u64,
-    context_switches: u64,
-    power_usage: f64,
-}
+// #[derive(Debug, Serialize)]
+// struct IterationStat {
+//     benchmark: Benchmark,
+//     instructions: u64,
+//     iterations: u64,
+//     branches: u64,
+//     branch_misses: u64,
+//     cache_misses: u64,
+//     cycles: u64,
+//     context_switches: u64,
+//     power_usage: f64,
+// }
 
-#[derive(Debug, Clone)]
-struct Probe {
-    name: String,
-    location: String,
-    binary: String,
-    project: String,
-}
+// #[derive(Debug, Clone)]
+// struct Probe {
+//     name: String,
+//     location: String,
+//     binary: String,
+//     project: String,
+// }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash, PartialOrd, PartialEq, Eq)]
 pub struct Benchmark {
@@ -112,40 +84,6 @@ impl Benchmark {
             .join(&self.benchmark.replace(r" ", "_").replace("/", "_"))
             .join(self.id.replace(" ", "_").replace("/", "_"))
     }
-
-    fn get_clean_project(&self) -> String {
-        self.project.replace(" ", "_").replace("-", "_")
-    }
-
-    fn get_clean_benchmark(&self) -> String {
-        self.benchmark
-            .replace(" ", "_")
-            .replace("/", "_")
-            .replace("-", "_")
-    }
-
-    fn get_clean_id(&self) -> String {
-        self.id
-            .replace(" ", "_")
-            .replace("/", "_")
-            .replace("-", "_")
-    }
-
-    pub fn new(
-        project: String,
-        benchmark: String,
-        path: String,
-        id: String,
-        features: Vec<String>,
-    ) -> Self {
-        Self {
-            project,
-            benchmark,
-            path,
-            id,
-            features,
-        }
-    }
 }
 
 impl ToString for Benchmark {
@@ -156,10 +94,11 @@ impl ToString for Benchmark {
 
 #[test]
 fn write_vec() {
+
     let mut wtr = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(std::io::stdout());
-    let project = TargetProject {
+    let project = crate::data::project::TargetProject {
         name: "Hello".to_string(),
         repo_url: "".to_string(),
         repo_tag: "".to_string(),
@@ -167,6 +106,7 @@ fn write_vec() {
     wtr.serialize(project).expect("Couldn't write");
 }
 
+#[test]
 fn main() {
     // Set debug mode
     env::set_var("ENERGY_DEBUG", "");
@@ -234,7 +174,10 @@ fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
             bench_group_bar.set_message(format!("Compiling benchmark: {}", group.name.trim()));
 
             // Compile and save the executable
-            let (executable, workdir) = compile_benchmark_file(&group, HashMap::new());
+            let executable = compile_benchmark_file(&group, None, None, None, None);
+            let executable = if executable.is_some() {executable.unwrap()} else {continue};
+
+            let workdir = get_workdir_for_project(&group.project);
             debugln!("Executable {} and workdir {:?}", &executable, &workdir);
 
             for benchmark_id in group.benches.iter() {
@@ -266,7 +209,7 @@ fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
     .unwrap();
 
     // Set up progress bar for commands
-    let mut progress_bar = ProgressBar::new(commands.len() as u64);
+    let progress_bar = ProgressBar::new(commands.len() as u64);
     progress_bar.clone().with_style(sty.clone());
     progress_bar
         .clone()
@@ -278,7 +221,7 @@ fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
     let mut failures: Vec<String> = Default::default();
 
     // Run commands
-    while let Some((mut cmd, path)) = commands.pop() {
+    while let Some((mut cmd, _)) = commands.pop() {
         let success = run_command(&mut cmd);
         progress_bar.inc(1);
         if !success {
@@ -380,58 +323,59 @@ fn cargo_clean_project(project: &str) -> () {
 
 pub fn compile_benchmark_file(
     benchmark: &BenchFile,
-    extra_env: std::collections::HashMap<&str, &str>,
-) -> (String, PathBuf) {
+    toolchain: Option<String>,
+    args: Option<Vec<&str>>,
+    features: Option<Vec<&str>>,
+    envs: Option<std::collections::HashMap<&str, &str>>,
+) -> Option<String> {
     debugln!(
         "Compiling {} in {}",
         benchmark.name,
         benchmark.get_workdir()
     );
+
     let mut cargo = Command::new("cargo");
 
-    // if !extra_env.is_empty() {
-    cargo.envs(extra_env);
-    // }
+    if let Some(toolchain) = toolchain {
+        cargo.arg(toolchain);
+    }
+
+    if let Some(env_map) = envs {
+        cargo.envs(env_map);
+    }
 
     cargo
         .arg("bench") // cargo bench
-        .current_dir(get_workdir_for_project(&benchmark.project).join(benchmark.get_workdir()))
+        .current_dir(get_workdir_for_project(&benchmark.project))
         .arg("--bench")
         .arg(&benchmark.name)
-        .arg("--no-run");
+        .arg("--no-run")
+        .arg("--message-format=json");
 
-    if benchmark.features.len() > 0 {
-        cargo.arg("--features").arg(benchmark.features.join(","));
+    if let Some(args) = args {
+        cargo.args(args);
+    }
+
+    let mut features = features.unwrap_or(Vec::new());
+    features.extend(benchmark.features.iter().map(String::as_str));
+
+    if features.len() > 0 {
+        cargo.arg("--features").arg(features.join(","));
     }
 
     debugln!("Compile command: {:?}", cargo);
 
     let output = cargo.output().unwrap();
-    let stderr = std::str::from_utf8(&*output.stderr).unwrap().to_string();
-    lazy_static! {
-        static ref EXEC_REG: Regex =
-            Regex::new(r"Executable .*? \((.*?target/release/deps/[\w_-]+)\)").unwrap();
-    }
-    // println!("{:?}", &stderr);
-    match EXEC_REG.captures_iter(&stderr).next() {
-        None => {
-            panic!(
-                "Did not find an executable while compiling {}: {:?}",
-                benchmark.project, cargo
-            );
-        }
-        Some(found_match) => {
-            debugln!(
-                "Found {} and {:?}",
-                found_match[1].to_string(),
-                &get_workdir_for_project(&benchmark.project)
-            );
-            (
-                found_match[1].to_string(),
-                get_workdir_for_project(&benchmark.project),
-            )
-        }
-    }
+    let stdout = std::str::from_utf8(&*output.stdout).unwrap().to_string();
+    // println!("{}", stdout);
+    let compiler_emits: Option<String> = stdout
+        .split("\n")
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str::<CompilerOutputElement>(&line).unwrap())
+        .filter_map(|elem| elem.executable)
+        .next();
+
+    compiler_emits
 }
 
 #[test]
