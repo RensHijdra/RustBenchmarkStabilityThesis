@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::rc::Rc;
+use graphviz_rust::attributes::label;
 use itertools::Itertools;
 
 use syn::{Abi, Arm, Block, ExprArray, ExprAssign, ExprAsync, ExprAwait, ExprBreak, ExprCall, ExprClosure, ExprContinue, ExprField, ExprForLoop, ExprIf, ExprLet, ExprLoop, ExprMatch, ExprMethodCall, ExprReference, ExprRepeat, ExprReturn, ExprStruct, ExprTry, ExprTryBlock, ExprTuple, ExprUnsafe, ExprWhile, Index, ItemFn, ItemMod, TypePtr};
@@ -22,14 +23,14 @@ struct Visitor<'rc, 'region> {
 
 impl<'rc, 'region> Visitor<'rc, 'region> {
     pub fn new(counter: &'rc mut Rc<HashMap<String, u64>>, region: &'region Region, path: &str) -> Self {
-
-
         Visitor { counter, region, _count: region.execution_count.clone() as u64, loop_depth: 0, modpath: parse_mod_from_str(path)}
     }
 
-    fn count(&mut self, label: String) {
-        Rc::get_mut(self.counter).unwrap().add_or_insert(label, self._count.clone());
+    fn count(&mut self, label: &str) {
+        Rc::get_mut(self.counter).unwrap().add_or_insert("count_".to_owned() + label, self._count.clone());
+        Rc::get_mut(self.counter).unwrap().add_or_insert("once_".to_owned() + label, 1);
     }
+
     pub(crate) fn enter_mod(&mut self, modname: String) {
         self.modpath.push(modname);
     }
@@ -40,13 +41,18 @@ impl<'rc, 'region> Visitor<'rc, 'region> {
 }
 
 
+#[test]
+fn test_string_add() {
+
+}
+
 impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
     fn visit_abi(&mut self, i: &'ast Abi) {
         if !self.region.overlaps_span(&i.span()) {
             return;
         }
         if self.region.overlaps_span(&i.extern_token.span) {
-            self.count("abi".to_string());
+            self.count("abi");
         }
 
         visit_abi(self, i);
@@ -57,11 +63,11 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
         if self.region.overlaps_span(&i.pat.span()) {
-            self.count("match_arm_pat".to_string());
+            self.count("match_arm_pat");
         }
         if let Some((_, expr)) = &i.guard {
             if self.region.overlaps_span(&expr.span()) {
-                self.count("match_arm_guard".to_string());
+                self.count("match_arm_guard");
             }
         }
         visit_arm(self, i);
@@ -79,7 +85,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("array".to_string());
+        self.count("array");
 
         visit_expr_array(self, i);
     }
@@ -89,7 +95,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("assign".to_string());
+        self.count("assign");
         visit_expr_assign(self, i);
     }
 
@@ -99,11 +105,11 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.async_token.span) {
-            self.count("async".to_string());
+            self.count("async");
         }
 
         if i.capture.is_some_and(|cap| self.region.overlaps_span(&cap.span)) {
-            self.count("closure_capture".to_string());
+            self.count("closure_capture");
         }
         visit_expr_async(self, i);
     }
@@ -114,7 +120,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.await_token.span) {
-            self.count("await".to_string());
+            self.count("await");
         }
 
         visit_expr_await(self, i);
@@ -126,7 +132,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.break_token.span) {
-            self.count("break".to_string());
+            self.count("break");
         }
         visit_expr_break(self, i);
     }
@@ -136,7 +142,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("call".to_string());
+        self.count("call");
 
         visit_expr_call(self, i);
     }
@@ -147,19 +153,19 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.or2_token.span) && self.region.overlaps_span(&i.or1_token.span) {
-            self.count("closure".to_string());
+            self.count("closure");
         }
 
         if i.asyncness.is_some_and(|tok| self.region.overlaps_span(&tok.span)) {
-            self.count("closure_async".to_string());
+            self.count("closure_async");
         }
 
         if i.constness.is_some_and(|tok| self.region.overlaps_span(&tok.span)) {
-            self.count("closure_const".to_string());
+            self.count("closure_const");
         }
 
         if i.movability.is_some_and(|tok| self.region.overlaps_span(&tok.span)) {
-            self.count("closure_static".to_string());
+            self.count("closure_static");
         }
         visit_expr_closure(self, i);
     }
@@ -170,7 +176,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.continue_token.span) {
-            self.count("break".to_string());
+            self.count("break");
         }
         visit_expr_continue(self, i);
     }
@@ -179,7 +185,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("field".to_string());
+        self.count("field");
 
         visit_expr_field(self, i);
     }
@@ -190,11 +196,11 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.for_token.span) {
-            self.count("loop_for".to_string());
+            self.count("loop_for");
         }
 
         if self.loop_depth > 0 {
-            *Rc::get_mut(self.counter).unwrap().entry("nested_loop".to_string()).or_insert(0) += 1
+            self.count("nested_loop");
         }
 
         self.loop_depth += 1;
@@ -208,11 +214,11 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.if_token.span) {
-            self.count("if".to_string());
+            self.count("if");
         }
 
         if i.else_branch.as_ref().is_some_and(|(tok, _)| self.region.overlaps_span(&tok.span)) {
-            self.count("else".to_string());
+            self.count("else");
         }
 
         visit_expr_if(self, i);
@@ -223,7 +229,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
         if self.region.overlaps_span(&i.let_token.span()) {
-            self.count("let_expr".to_string());
+            self.count("let_expr");
         }
 
         visit_expr_let(self, i);
@@ -234,7 +240,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
         if self.region.overlaps_span(&i.loop_token.span) {
-            self.count("loop_inf".to_string())
+            self.count("loop_inf")
         }
         if self.loop_depth > 0 {
             *Rc::get_mut(self.counter).unwrap().entry("nested_loop".to_string()).or_insert(0) += 1
@@ -251,7 +257,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
         if self.region.overlaps_span(&i.match_token.span) {
-            self.count("match".to_string());
+            self.count("match");
         }
         visit_expr_match(self, i);
     }
@@ -260,7 +266,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         if !self.region.overlaps_span(&i.span()) {
             return;
         }
-        self.count("method_call".to_string());
+        self.count("method_call");
 
         visit_expr_method_call(self, i);
     }
@@ -270,10 +276,10 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("reference".to_string());
+        self.count("reference");
 
         if i.mutability.is_some() {
-            self.count("reference_mutable".to_string());
+            self.count("reference_mutable");
         }
 
         visit_expr_reference(self, i);
@@ -284,7 +290,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("array".to_string());
+        self.count("array");
 
         visit_expr_repeat(self, i);
     }
@@ -294,7 +300,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
         if self.region.overlaps_span(&i.return_token.span) {
-            self.count("return".to_string());
+            self.count("return");
         }
         visit_expr_return(self, i);
     }
@@ -304,7 +310,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("struct".to_string());
+        self.count("struct");
 
         visit_expr_struct(self, i);
     }
@@ -315,7 +321,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.question_token.span) {
-            self.count("try".to_string());
+            self.count("try");
         }
 
         visit_expr_try(self, i);
@@ -327,7 +333,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
         }
 
         if self.region.overlaps_span(&i.try_token.span) {
-            self.count("try_block".to_string());
+            self.count("try_block");
         }
 
         visit_expr_try_block(self, i);
@@ -338,7 +344,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("tuple".to_string());
+        self.count("tuple");
 
         visit_expr_tuple(self, i);
     }
@@ -348,7 +354,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("unsafe".to_string());
+        self.count("unsafe");
 
         visit_expr_unsafe(self, i);
     }
@@ -358,7 +364,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
         if self.region.overlaps_span(&i.while_token.span) {
-            self.count("loop_while".to_string())
+            self.count("loop_while")
         }
         if self.loop_depth > 0 {
             *Rc::get_mut(self.counter).unwrap().entry("nested_loop".to_string()).or_insert(0) += 1
@@ -374,7 +380,7 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
 
-        self.count("index".to_string());
+        self.count("index");
 
         visit_index(self, i);
     }
@@ -386,8 +392,8 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
 
 
         if self.region.contains_span(&i.sig.ident.span()) {
-            self.count("item_fn".to_string());
-            self.count(self.modpath.join("::").to_string());
+            self.count("item_fn");
+            self.count(self.modpath.join("::").as_str());
         }
 
 
@@ -408,14 +414,13 @@ impl<'ast, 'rc, 'region, 's> Visit<'ast> for Visitor<'rc, 'region> {
             return;
         }
         if self.region.overlaps_span(&i.star_token.span) {
-            self.count("ptr_star".to_string())
+            self.count("ptr_star")
         }
         visit_type_ptr(self, i);
     }
 }
 
 pub(crate) fn visit_function_syn(coverage: &Function, map: &mut Rc<HashMap<String, u64>>) {
-    // let region = coverage.regions.first().unwrap(); // TODO cover all regions
     if coverage.filenames.len() > 1 {
         panic!("{:?} has more than one file", coverage.filenames);
     }
