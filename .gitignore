@@ -1,5 +1,7 @@
-/target
-data/
+/target/
+/data/
+/coverage/
+/projects/
 .idea/
-projects/
 *.json
+*.tar.gz

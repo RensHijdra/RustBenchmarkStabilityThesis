@@ -1,19 +1,13 @@
-#![allow(unused_imports)]
-
-use std::fs;
-use std::os::unix::io::AsRawFd;
-use std::path::Path;
 use std::process::Command;
 
 use lazy_static::lazy_static;
-use nix::sys::stat;
-use nix::unistd;
-use ra_ap_hir::known::{assert, str};
+use ra_ap_hir::known::{ str};
 use regex::Regex;
-use tempfile::tempdir;
+use crate::collect::compile_benchmark_file;
 
-use crate::collect::{compile_benchmark_file, Benchmark};
-use crate::project::{find_benchmarks_for_project, get_workdir_for_project, BenchFile, Project};
+use crate::data::project::{
+    get_workdir_for_project, BenchFile, Project,
+};
 
 pub(crate) fn find_mangled_functions(executable_path: &str) -> Vec<String> {
     lazy_static! {
@@ -44,7 +38,7 @@ fn test_find_mangled_functions() {
         .filter(|p| p.name == "ahash")
         .next()
         .expect("Are the projects loaded?");
-    let (exe, _workdir) = compile_benchmark_file(&bench);
+    let exe = compile_benchmark_file(&bench, None, None, None, None).unwrap();
     let mangled_functions = find_mangled_functions(&exe);
     println!("{:?}", mangled_functions);
     println!("{}", mangled_functions.len());
