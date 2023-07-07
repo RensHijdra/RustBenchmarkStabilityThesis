@@ -12,4 +12,5 @@ chgrp -R msr /dev/cpu/*/msr
 chmod g+r /dev/cpu/*/msr
 
 cpufreq-set -f 4G
-echo 0 | sudo tee /sys/devices/system/cpu/cpu{2..11}/online
+echo 1 | tee /sys/devices/system/cpu/cpu3/online
+echo 0 | tee /sys/devices/system/cpu/cpu{1,2,4,5,6,7,8,9,10,11}/online
