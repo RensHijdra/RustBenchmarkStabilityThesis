@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
 use std::rc::Rc;
-use graphviz_rust::attributes::label;
 use itertools::Itertools;
 
 use syn::{Abi, Arm, Block, ExprArray, ExprAssign, ExprAsync, ExprAwait, ExprBreak, ExprCall, ExprClosure, ExprContinue, ExprField, ExprForLoop, ExprIf, ExprLet, ExprLoop, ExprMatch, ExprMethodCall, ExprReference, ExprRepeat, ExprReturn, ExprStruct, ExprTry, ExprTryBlock, ExprTuple, ExprUnsafe, ExprWhile, Index, ItemFn, ItemMod, TypePtr};
@@ -9,7 +8,6 @@ use syn::spanned::Spanned;
 use syn::visit::{Visit, visit_abi, visit_arm, visit_block, visit_expr_array, visit_expr_assign, visit_expr_async, visit_expr_await, visit_expr_break, visit_expr_call, visit_expr_closure, visit_expr_continue, visit_expr_field, visit_expr_for_loop, visit_expr_if, visit_expr_let, visit_expr_loop, visit_expr_match, visit_expr_method_call, visit_expr_reference, visit_expr_repeat, visit_expr_return, visit_expr_struct, visit_expr_try, visit_expr_try_block, visit_expr_tuple, visit_expr_unsafe, visit_expr_while, visit_index, visit_item_fn, visit_item_mod, visit_type_ptr};
 
 use crate::data::llvmcovdata::{Function, Region};
-use crate::data::Update;
 
 struct Visitor<'rc, 'region> {
     counter: &'rc mut Rc<HashMap<String, u64>>,
@@ -27,8 +25,8 @@ impl<'rc, 'region> Visitor<'rc, 'region> {
     }
 
     fn count(&mut self, label: &str) {
-        Rc::get_mut(self.counter).unwrap().add_or_insert("count_".to_owned() + label, self._count.clone());
-        Rc::get_mut(self.counter).unwrap().add_or_insert("once_".to_owned() + label, 1);
+        Rc::get_mut(self.counter).unwrap().entry("count_".to_owned() + label).and_modify(|v| {*v = v.saturating_add(1);}).or_default();
+        Rc::get_mut(self.counter).unwrap().entry("once_".to_owned() + label).and_modify(|v| {*v = v.saturating_add(self._count);}).or_default();
     }
 
     pub(crate) fn enter_mod(&mut self, modname: String) {
@@ -425,12 +423,14 @@ pub(crate) fn visit_function_syn(coverage: &Function, map: &mut Rc<HashMap<Strin
         panic!("{:?} has more than one file", coverage.filenames);
     }
     let path = coverage.filenames.first().unwrap();
+    println!("{}", &path);
     let result = syn::parse_file(&fs::read_to_string(path).expect(&format!("Could not open file {path}")));
 
     if result.is_err() {
         // Failed to parse
         return;
     }
+
     let parser = result.unwrap();
     for region in coverage.regions.iter() {
         let mut visitor = Visitor::new(map, &region, coverage.filenames.first().unwrap());

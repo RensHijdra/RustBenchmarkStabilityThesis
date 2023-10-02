@@ -297,7 +297,7 @@ fn criterion_bench_command(
     let mut bench_binary = Command::new("cset");
 
     // Setup `cpuset`
-    bench_binary.args(["--exec", "BENCH", "--"]);
+    bench_binary.args(["proc", "--exec", "BENCH", "--"]);
 
     // Configure the benchmark settings
     bench_binary

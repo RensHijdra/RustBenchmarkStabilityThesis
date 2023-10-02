@@ -235,7 +235,7 @@ fn get_git_project(project: TargetProject) -> ExitStatus {
 
 #[test]
 fn run_find_benchmarks_for_project() {
-    let project = find_benchmarks_for_project("tracing");
+    let project = find_benchmarks_for_project("prost");
     project.store().unwrap()
 }
 
