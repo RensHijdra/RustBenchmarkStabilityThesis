@@ -5,7 +5,7 @@ use criterion_energy::msr::measurement::Energy;
 
 macro_rules! nop {
     ($group:expr, $number:literal) => {
-        $group.bench_function("$number", |bencher| {
+        $group.bench_function(String::from($number), |bencher| {
             bencher.iter(|| {
                 for _ in 0..$number {
                     unsafe {
