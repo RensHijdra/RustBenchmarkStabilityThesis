@@ -141,7 +141,7 @@ fn disable_cores() {
             Ok(_) => {}
             Err(_) => {}
         };
-    })
+    });
 
 
     // Re-enable core 3

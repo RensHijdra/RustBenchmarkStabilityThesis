@@ -123,7 +123,7 @@ pub fn gather_instructions() {
             };
             for id in &benchmark_file.benches {
                 let mut command = Command::new("valgrind");
-                command.current_dir(format!("/home/rens/thesis/scrape-crates/projects/{}", &project.name));cd "/home/rens/scrape_crates/projects/combine/benches" && "cargo" "bench" "--bench" "http" "--no-run" "--features"
+                command.current_dir(format!("/home/rens/thesis/scrape-crates/projects/{}", &project.name));
                 command.args(["--tool=callgrind", "--fair-sched=yes", "--dump-instr=yes", "--callgrind-out-file=/dev/null", "--collect-atstart=no", "--instr-atstart=no", &coverage_executable, &format!("^{}$", id)]);
                 println!("{:?}", command);
                 let logs = String::from_utf8(command.output().unwrap().stderr).unwrap();
