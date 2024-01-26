@@ -3,7 +3,7 @@ use std::process::Command;
 
 use caps::{CapSet, Capability, CapsHashSet};
 use clap::Parser;
-use crate::coverage::gather_coverage;
+use crate::coverage::{gather_coverage, gather_instructions};
 
 use crate::data::project::{
     cargo_check_all_projects, clone_projects_from_targets, find_all_benchmarks,
@@ -29,6 +29,8 @@ enum Cli {
     Check,
     #[command(about= "Collect coverage data from all projects.")]
     Coverage,
+    #[command()]
+    Instructions,
 }
 
 #[derive(clap::Args, Debug)]
@@ -113,6 +115,9 @@ fn main() {
         },
         Cli::Coverage => {
             gather_coverage();
+        },
+        Cli::Instructions => {
+            gather_instructions();
         }
     }
 }

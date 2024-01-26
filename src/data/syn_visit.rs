@@ -423,13 +423,13 @@ pub(crate) fn visit_function_syn(coverage: &Function, map: &mut Rc<HashMap<Strin
         panic!("{:?} has more than one file", coverage.filenames);
     }
     let path = coverage.filenames.first().unwrap();
-    println!("{}", &path);
+    // println!("{}", &path);
     let result = syn::parse_file(&fs::read_to_string(path).expect(&format!("Could not open file {path}")));
 
-    if result.is_err() {
-        // Failed to parse
+    if let Err(e) = result {
+        println!("Could not parse {:?} {:?}", path, e);
         return;
-    }
+    };
 
     let parser = result.unwrap();
     for region in coverage.regions.iter() {

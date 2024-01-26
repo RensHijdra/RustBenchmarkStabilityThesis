@@ -1,19 +1,21 @@
 use std::{env, fs};
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 
+use regex::Regex;
 use crate::collect::compile_benchmark_file;
 use crate::data::llvmcovdata::{Filter, LlvmCovData};
 use crate::data::project::{BenchFile, Project, read_target_projects};
 use crate::data::syn_visit::visit_function_syn;
 
-
 fn compile_for_coverage(benchmark_file: &BenchFile) -> Option<String> {
     let exe = compile_benchmark_file(
         &benchmark_file,
-        Some("+nightly".to_string()),
+        Some("+nightly-2023-04-15".to_string()),
         Some(vec!["-Zbuild-std", "--target=x86_64-unknown-linux-gnu"]),
         Some(vec!["coverage"]),
         Some(HashMap::from([
@@ -26,6 +28,7 @@ fn compile_for_coverage(benchmark_file: &BenchFile) -> Option<String> {
             ("CARGO_PROFILE_BENCH_OPT_LEVEL", "0"),
         ])),
     );
+
     exe
 }
 
@@ -34,7 +37,6 @@ fn export_profdata(profdata_path: &str, executable: &str) -> String {
     llvm_export.args(["export", "--instr-profile", profdata_path, executable]);
     let vec = llvm_export.output().unwrap().stdout;
     let result = String::from_utf8(vec).unwrap();
-    // println!("{:?}", result);
     result
 }
 
@@ -45,7 +47,6 @@ fn merge_profdata(profraw_path: &str) -> String {
     let _ = llvm_profdata.output().unwrap();
     profdata_path
 }
-
 
 fn run_with_coverage(executable: &str, benchmark_id: &str, dir: &PathBuf) -> String {
     let mut dir = dir.clone();
@@ -62,7 +63,7 @@ fn run_with_coverage(executable: &str, benchmark_id: &str, dir: &PathBuf) -> Str
     let profraw_path = chrono::Local::now().format("%Y%m%d_%H%M%S.profraw").to_string();
     command.env("MINICOV_PROFILE_FILE", &profraw_path);
     command.arg(benchmark_filter);
-    // println!("{:?}", command);
+    println!("{:?}", command);
     let _ = command.output().unwrap();
     // println!("{}", output.status);
     dir.push(profraw_path);
@@ -75,9 +76,6 @@ fn collect_covdata(json_data: &str) -> LlvmCovData {
     serde_json::from_str(&json_data).expect(&format!("Could not deserialize {}", json_data))
 }
 
-
-
-
 fn save_language_features(data: &Rc<HashMap<String, u64>>, path: String) {
     println!("Writing to {}", &path);
     let mut writer = csv::Writer::from_path(path).unwrap();
@@ -86,59 +84,120 @@ fn save_language_features(data: &Rc<HashMap<String, u64>>, path: String) {
     }
 }
 
-pub fn gather_coverage() {
+fn compile_for_callgrind(benchmark_file: &BenchFile) -> Option<String> {
+    let exe = compile_benchmark_file(
+        &benchmark_file,
+        Some("+nightly-2023-04-15".to_string()),
+        Some(vec!["-Zbuild-std", "--target=x86_64-unknown-linux-gnu"]),
+        Some(vec!["criterion-energy/callgrind"]),
+        Some(HashMap::from([
+            (
+                "RUSTFLAGS",
+                "-Csymbol-mangling-version=v0 -g",
+            ),
+            ("CARGO_PROFILE_BENCH_DEBUG", "true"),
+            ("CARGO_PROFILE_BENCH_LTO", "no"),
+            ("CARGO_PROFILE_BENCH_OPT_LEVEL", "0"),
+        ])),
+    );
+
+    exe
+}
+
+
+pub fn gather_instructions() {
+    let re = Regex::new(r"==\d+==\sCollected : (\d+)").unwrap();
+    let mut file = OpenOptions::new().write(true).truncate(true).create(true).open("instructions.csv").unwrap();
     for record in read_target_projects() {
         let project = Project::load(&record.name).expect("Could not load project");
         for benchmark_file in project.bench_files {
-            let coverage_executable = compile_for_coverage(&benchmark_file);
-            let coverage_executable = if coverage_executable.is_some() {
-                coverage_executable.unwrap()
-            } else {
-                println!("Failed to compile for coverage {:?}", benchmark_file);
-                continue;
+            let _ = compile_for_callgrind(&benchmark_file).unwrap();
+        }
+    }
+    for record in read_target_projects() {
+        let project = Project::load(&record.name).expect("Could not load project");
+        for benchmark_file in project.bench_files {
+            let coverage_executable = match compile_for_callgrind(&benchmark_file) {
+                None => {println!("failed to compile"); panic!(); break;}
+                Some(executable) => {executable}
             };
-
-            let mut dir = env::current_dir().unwrap();
-            dir.push("coverage");
-            dir.push(&project.name);
-
             for id in &benchmark_file.benches {
-                let profraw_path = run_with_coverage(&coverage_executable, id, &dir);
-                let profdata_path = merge_profdata(&profraw_path);
-                let json_string = export_profdata(&profdata_path, &coverage_executable);
+                let mut command = Command::new("valgrind");
+                command.current_dir(format!("/home/rens/thesis/scrape-crates/projects/{}", &project.name));cd "/home/rens/scrape_crates/projects/combine/benches" && "cargo" "bench" "--bench" "http" "--no-run" "--features"
+                command.args(["--tool=callgrind", "--fair-sched=yes", "--dump-instr=yes", "--callgrind-out-file=/dev/null", "--collect-atstart=no", "--instr-atstart=no", &coverage_executable, &format!("^{}$", id)]);
+                println!("{:?}", command);
+                let logs = String::from_utf8(command.output().unwrap().stderr).unwrap();
+                println!("{}", logs);
+                let instr = match re.captures_iter(&logs).last() {
+                    None => {println!("Failed to capture output"); panic!(); break}
+                    Some(captures) => captures.get(1).unwrap().as_str()
+                };
 
-                if json_string.is_empty() {
-                    println!("Empty json for {}", id);
-                    break;
-                }
-
-                let mut data: LlvmCovData = collect_covdata(&json_string);
-                data.filter_non_zero();
-                fs::write(profdata_path.replace("profdata", "json"), serde_json::to_string(&data).unwrap()).unwrap();
-
-                let mut visit_counter = Rc::new(HashMap::<String, u64>::new());
-
-                for entry in data.data {
-                    for func in entry.functions.iter() {
-                        visit_function_syn(func, &mut visit_counter);
-                    }
-                }
-
-                let language_features_path = profraw_path.replace("profraw", "csv");
-                save_language_features(&visit_counter, language_features_path);
+                file.write(project.name.as_bytes()).unwrap();
+                file.write(b"; ").unwrap();
+                file.write(benchmark_file.name.as_bytes()).unwrap();
+                file.write(b"; ").unwrap();
+                file.write(id.as_bytes()).unwrap();
+                file.write(b"; ").unwrap();
+                file.write(instr.as_bytes()).unwrap();
+                file.write(b"\n").unwrap();
             }
         }
     }
 }
 
-mod test {
-    #[test]
-    fn run_callgraph() {
-        use crate::coverage::gather_coverage;
-        gather_coverage();
-    }
-}
+    pub fn gather_coverage() {
+        for record in read_target_projects() {
+            let project = Project::load(&record.name).expect("Could not load project");
+            for benchmark_file in project.bench_files {
+                let coverage_executable = compile_for_coverage(&benchmark_file);
+                let coverage_executable = if coverage_executable.is_some() {
+                    coverage_executable.unwrap()
+                } else {
+                    println!("Failed to compile for coverage {:?}", benchmark_file);
+                    continue;
+                };
 
+                let mut dir = env::current_dir().unwrap();
+                dir.push("coverage");
+                dir.push(&project.name);
+
+                for id in &benchmark_file.benches {
+                    let profraw_path = run_with_coverage(&coverage_executable, id, &dir);
+                    let profdata_path = merge_profdata(&profraw_path);
+                    let json_string = export_profdata(&profdata_path, &coverage_executable);
+
+                    if json_string.is_empty() {
+                        println!("Empty coverage data json for {}/{} @ {}", &project.name, id, &profdata_path);
+                        break;
+                    }
+
+                    let mut data: LlvmCovData = collect_covdata(&json_string);
+                    data.filter_non_zero();
+                    fs::write(profdata_path.replace("profdata", "json"), serde_json::to_string(&data).unwrap()).unwrap();
+
+                    let mut visit_counter = Rc::new(HashMap::<String, u64>::new());
+
+                    for entry in data.data {
+                        for func in entry.functions.iter() {
+                            visit_function_syn(func, &mut visit_counter);
+                        }
+                    }
+
+                    let language_features_path = profraw_path.replace("profraw", "csv");
+                    save_language_features(&visit_counter, language_features_path);
+                }
+            }
+        }
+    }
+
+    mod test {
+        #[test]
+        fn run_callgraph() {
+            use crate::coverage::gather_coverage;
+            gather_coverage();
+        }
+    }
 
 
 // fn run_with_callgrind(executable: &str, benchmark_id: &str, dir: &PathBuf) {

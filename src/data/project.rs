@@ -204,6 +204,7 @@ pub fn get_workdir_for_project(project: &str) -> PathBuf {
 pub fn read_target_projects() -> Vec<TargetProject> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
+        .comment(Some(b'#'))
         .from_path(Path::new("targets.csv"))
         .expect("Could not find file targets.cvs, consider adding targets");
     reader

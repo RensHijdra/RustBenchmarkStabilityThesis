@@ -1,18 +1,20 @@
+use std::env;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::ToString;
-use std::time::{Duration};
-use std::{env};
+use std::time::Duration;
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::seq::SliceRandom;
-use rand::{thread_rng};
+use rand::thread_rng;
 use rstats::Printing;
 use serde::{Deserialize, Serialize};
 
 use crate::data::compileroutput::CompilerOutputElement;
 use crate::data::project::{
-    get_workdir_for_project, read_target_projects, BenchFile, Project,
+    BenchFile, get_workdir_for_project, Project, read_target_projects,
 };
 
 // Enable setting probes and traces
@@ -94,7 +96,6 @@ impl ToString for Benchmark {
 
 #[test]
 fn write_vec() {
-
     let mut wtr = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(std::io::stdout());
@@ -114,6 +115,46 @@ fn main() {
     run(1, 5, 1, 5);
 }
 
+fn enable_cores() {
+    //echo 1 | tee /sys/devices/system/cpu/cpu3/online
+    // echo 0 | tee /sys/devices/system/cpu/cpu{1,2,4,5,6,7,8,9,10,11}/online
+
+    std::fs::read_dir("/sys/devices/system/cpu/").unwrap().map(|path| path.unwrap().path().join("online")).for_each(|path| {
+        let mut file = OpenOptions::new().truncate(true).open(path).unwrap();
+
+        // Attempt write, dont crash
+        match file.write(&[1u8]) {
+            Ok(_) => {}
+            Err(_) => {}
+        };
+    })
+
+}
+
+fn disable_cores() {
+    // Disable all, core 0 will fail
+    std::fs::read_dir("/sys/devices/system/cpu/").unwrap().map(|path| path.unwrap().path().join("online")).for_each(|path| {
+        let mut file = OpenOptions::new().truncate(true).open(path).unwrap();
+
+        // Attempt write, dont crash
+        match file.write(&[0u8]) {
+            Ok(_) => {}
+            Err(_) => {}
+        };
+    })
+
+
+    // Re-enable core 3
+    let mut file = OpenOptions::new().truncate(true).open("/sys/devices/system/cpu/cpu3/online").unwrap();
+    match file.write(&[1u8]) {
+        Ok(_) => {}
+        Err(_) => {}
+    };
+
+
+
+}
+
 pub fn run(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64) {
     for i in 0..iterations {
         println!("Running iteration #{}", i + 1);
@@ -122,12 +163,13 @@ pub fn run(iterations: usize, measurement_time: u64, warmup_time: u64, sample_si
 }
 
 fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
+    enable_cores();
     let m = MultiProgress::new();
     let sty = ProgressStyle::with_template(
         "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
     )
-    .unwrap()
-    .progress_chars("##-");
+        .unwrap()
+        .progress_chars("##-");
 
     // Clear artifacts
     let target_projects = read_target_projects();
@@ -175,7 +217,7 @@ fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
 
             // Compile and save the executable
             let executable = compile_benchmark_file(&group, None, None, None, None);
-            let executable = if executable.is_some() {executable.unwrap()} else {continue};
+            let executable = if executable.is_some() { executable.unwrap() } else { continue; };
 
             let workdir = get_workdir_for_project(&group.project);
             debugln!("Executable {} and workdir {:?}", &executable, &workdir);
@@ -200,13 +242,15 @@ fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
     }
     m.remove(&compile_project_bar);
 
+    disable_cores();
+
     // Shuffle commands
     commands.shuffle(&mut thread_rng());
 
     let sty = ProgressStyle::with_template(
         "[{elapsed_precise} | {eta_precise}] {wide_bar:.cyan/blue} {pos:>4}/{len:4}",
     )
-    .unwrap();
+        .unwrap();
 
     // Set up progress bar for commands
     let progress_bar = ProgressBar::new(commands.len() as u64);
@@ -372,8 +416,9 @@ pub fn compile_benchmark_file(
         .split("\n")
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_str::<CompilerOutputElement>(&line).unwrap())
+        // .filter(|elem| elem.target.name == benchmark.name)
         .filter_map(|elem| elem.executable)
-        .next();
+        .last();
 
     compiler_emits
 }
