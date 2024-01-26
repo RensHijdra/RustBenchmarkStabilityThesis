@@ -122,7 +122,7 @@ fn enable_cores() {
     glob::glob("/sys/devices/system/cpu/cpu*/online").expect("Found no cpu online files").for_each(|entry| {
         match entry {
             Ok(path) => {
-                let mut file = OpenOptions::new().truncate(true).open(path).unwrap();
+                let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
 
                 // Attempt write, dont crash
                 match file.write(&[1u8]) {
@@ -144,10 +144,11 @@ fn enable_cores() {
 
 fn disable_cores() {
     // Disable all, core 0 will fail
+    println!("{:?}", glob::glob("/sys/devices/system/cpu/cpu*/online"));
     glob::glob("/sys/devices/system/cpu/cpu*/online").expect("Found no cpu online files").for_each(|entry| {
         match entry {
             Ok(path) => {
-                let mut file = OpenOptions::new().truncate(true).open(path).unwrap();
+                let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
 
                 // Attempt write, dont crash
                 match file.write(&[0u8]) {
