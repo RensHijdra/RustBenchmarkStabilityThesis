@@ -119,28 +119,48 @@ fn enable_cores() {
     //echo 1 | tee /sys/devices/system/cpu/cpu3/online
     // echo 0 | tee /sys/devices/system/cpu/cpu{1,2,4,5,6,7,8,9,10,11}/online
 
-    std::fs::read_dir("/sys/devices/system/cpu/").unwrap().map(|path| path.unwrap().path().join("online")).for_each(|path| {
-        let mut file = OpenOptions::new().truncate(true).open(path).unwrap();
+    glob::glob("/sys/devices/system/cpu/cpu*/online").expect("Found no cpu online files").for_each(|entry| {
+        match entry {
+            Ok(path) => {
+                let mut file = OpenOptions::new().truncate(true).open(path).unwrap();
 
-        // Attempt write, dont crash
-        match file.write(&[1u8]) {
-            Ok(_) => {}
+                // Attempt write, dont crash
+                match file.write(&[1u8]) {
+                    Ok(_) => {
+                        println!("Enabled core {:?}", &path);
+
+                    }
+                    Err(_) => {
+                        println!("Failed to enable core {:?}", &path);
+
+                    }
+                };
+            }
             Err(_) => {}
-        };
-    })
+        }
+    });
 
 }
 
 fn disable_cores() {
     // Disable all, core 0 will fail
-    std::fs::read_dir("/sys/devices/system/cpu/").unwrap().map(|path| path.unwrap().path().join("online")).for_each(|path| {
-        let mut file = OpenOptions::new().truncate(true).open(path).unwrap();
+    glob::glob("/sys/devices/system/cpu/cpu*/online").expect("Found no cpu online files").for_each(|entry| {
+        match entry {
+            Ok(path) => {
+                let mut file = OpenOptions::new().truncate(true).open(path).unwrap();
 
-        // Attempt write, dont crash
-        match file.write(&[0u8]) {
-            Ok(_) => {}
+                // Attempt write, dont crash
+                match file.write(&[0u8]) {
+                    Ok(_) => {
+                        println!("Disabled core {:?}", &path);
+                    }
+                    Err(_) => {
+                        println!("Failed to disable {:?}", &path);
+                    }
+                };
+            }
             Err(_) => {}
-        };
+        }
     });
 
 
