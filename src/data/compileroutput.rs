@@ -35,7 +35,7 @@ pub struct CompilerOutputElement {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub(crate) opt_level: String,
-    pub(crate) debuginfo: i64,
+    pub(crate) debuginfo: Option<i64>,
     pub(crate) debug_assertions: bool,
     pub(crate) overflow_checks: bool,
     pub(crate) test: bool,
