@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::string::ToString;
 use std::time::Duration;
+use byteorder::WriteBytesExt;
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::seq::SliceRandom;
@@ -125,13 +126,13 @@ fn enable_cores() {
                 let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
 
                 // Attempt write, dont crash
-                match file.write(&[1u8]) {
+                match file.write_u8(1) {
                     Ok(_) => {
                         println!("Enabled core {:?}", &path);
 
                     }
-                    Err(_) => {
-                        println!("Failed to enable core {:?}", &path);
+                    Err(e) => {
+                        println!("Failed to enable core {:?}", e);
 
                     }
                 };
@@ -151,12 +152,12 @@ fn disable_cores() {
                 let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
 
                 // Attempt write, dont crash
-                match file.write(&[0u8]) {
+                match file.write_u8(0) {
                     Ok(_) => {
                         println!("Disabled core {:?}", &path);
                     }
-                    Err(_) => {
-                        println!("Failed to disable {:?}", &path);
+                    Err(e) => {
+                        println!("Failed to disable {:?}", e);
                     }
                 };
             }
@@ -167,7 +168,7 @@ fn disable_cores() {
 
     // Re-enable core 3
     let mut file = OpenOptions::new().truncate(true).open("/sys/devices/system/cpu/cpu3/online").unwrap();
-    match file.write(&[1u8]) {
+    match file.write_u8(1) {
         Ok(_) => {}
         Err(_) => {}
     };
