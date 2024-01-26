@@ -167,11 +167,14 @@ fn disable_cores() {
 
 
     // Re-enable core 3
-    let mut file = OpenOptions::new().truncate(true).open("/sys/devices/system/cpu/cpu3/online").unwrap();
+    let mut file = OpenOptions::new().write(true).truncate(true).open("/sys/devices/system/cpu/cpu3/online").unwrap();
     match write!(file, "1") {
         Ok(_) => {}
         Err(_) => {}
     };
+
+
+    Command::new("cset").args(["cset", "set", "-c", "3", "BENCH"]).status().unwrap();
 
 
 
