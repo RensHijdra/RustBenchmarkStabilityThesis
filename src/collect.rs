@@ -126,7 +126,7 @@ fn enable_cores() {
                 let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
 
                 // Attempt write, dont crash
-                match file.write_u8(1) {
+                match write!(file, "1") {
                     Ok(_) => {
                         println!("Enabled core {:?}", &path);
 
@@ -152,7 +152,7 @@ fn disable_cores() {
                 let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
 
                 // Attempt write, dont crash
-                match file.write_u8(0) {
+                match write!(file, "0") {
                     Ok(_) => {
                         println!("Disabled core {:?}", &path);
                     }
@@ -168,7 +168,7 @@ fn disable_cores() {
 
     // Re-enable core 3
     let mut file = OpenOptions::new().truncate(true).open("/sys/devices/system/cpu/cpu3/online").unwrap();
-    match file.write_u8(1) {
+    match write!(file, "1") {
         Ok(_) => {}
         Err(_) => {}
     };
