@@ -174,7 +174,7 @@ fn disable_cores() {
     };
 
 
-    Command::new("cset").args(["cset", "set", "-c", "3", "BENCH"]).status().unwrap();
+    Command::new("cset").args(["set", "-c", "3", "BENCH"]).status().unwrap();
 
 
 
