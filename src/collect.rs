@@ -149,29 +149,26 @@ fn disable_cores() {
     glob::glob("/sys/devices/system/cpu/cpu*/online").expect("Found no cpu online files").for_each(|entry| {
         match entry {
             Ok(path) => {
-                let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
+                if path.to_str().unwrap().contains("cpu3") || path.to_str().unwrap().contains("cpu0") {
 
-                // Attempt write, dont crash
-                match write!(file, "0") {
-                    Ok(_) => {
-                        println!("Disabled core {:?}", &path);
-                    }
-                    Err(e) => {
-                        println!("Failed to disable {:?}", e);
-                    }
-                };
+                } else {
+                    let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
+
+                    // Attempt write, dont crash
+                    match write!(file, "0") {
+                        Ok(_) => {
+                            println!("Disabled core {:?}", &path);
+                        }
+                        Err(e) => {
+                            println!("Failed to disable {:?}", e);
+                        }
+                    };
+                }
+
             }
             Err(_) => {}
         }
     });
-
-
-    // Re-enable core 3
-    let mut file = OpenOptions::new().write(true).truncate(true).open("/sys/devices/system/cpu/cpu3/online").unwrap();
-    match write!(file, "1") {
-        Ok(_) => {}
-        Err(_) => {}
-    };
 
 
     Command::new("cset").args(["set", "-c", "3", "BENCH"]).status().unwrap();
