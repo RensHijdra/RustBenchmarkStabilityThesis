@@ -279,19 +279,29 @@ pub fn run_project_consecutive(iterations: usize, measurement_time: u64, warmup_
     )
         .unwrap()
         .progress_chars("##-");
-
+    
     let command_bar = ProgressBar::new(commands.len() as u64).with_style(command_sty);
     m.add(command_bar.clone());
+    command_bar.tick();
+    command_bar.enable_steady_tick(Duration::from_secs(5));
     for (mut command, name) in commands {
         let progress_bar = ProgressBar::new(iterations as u64).with_style(sty.clone());
         m.add(progress_bar.clone());
+        progress_bar.tick();
+        command_bar.enable_steady_tick(Duration::from_secs(5));
+
         (0..iterations).for_each(|_| {
             run_command(&mut command);
             progress_bar.inc(1);
         });
+        progress_bar.finish_and_clear();
         m.remove(&progress_bar);
+        command_bar.inc(1);
     }
+    
+    command_bar.finish_and_clear();
 
+    
     m.remove(&command_bar);
 
     let target_projects = read_target_projects();
