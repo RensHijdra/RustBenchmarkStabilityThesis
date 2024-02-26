@@ -47,6 +47,9 @@ struct ExperimentSettings {
 
     #[arg(short, long, default_value = "300")]
     sample_size: u64,
+
+    #[arg(long)]
+    no_rmit: bool
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -71,6 +74,7 @@ fn main() {
                 settings.measurement_time,
                 settings.warmup_time,
                 settings.sample_size,
+                settings.no_rmit
             )
         }
         Cli::Project(subcommand) => match subcommand {

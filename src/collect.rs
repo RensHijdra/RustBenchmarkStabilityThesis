@@ -12,6 +12,7 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use rstats::Printing;
 use serde::{Deserialize, Serialize};
+use syscalls::Sysno::clone;
 
 use crate::data::compileroutput::CompilerOutputElement;
 use crate::data::project::{
@@ -113,7 +114,7 @@ fn main() {
     // Set debug mode
     env::set_var("ENERGY_DEBUG", "");
     env::set_var("KEEP_PROJECTS", "");
-    run(1, 5, 1, 5);
+    run(1, 5, 1, 5, false);
 }
 
 fn enable_cores() {
@@ -177,14 +178,7 @@ fn disable_cores() {
 
 }
 
-pub fn run(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64) {
-    for i in 0..iterations {
-        println!("Running iteration #{}", i + 1);
-        iteration(&measurement_time, &warmup_time, &sample_size);
-    }
-}
-
-fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
+fn compile_projects(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) -> Vec<(Command, String)> {
     enable_cores();
     let m = MultiProgress::new();
     let sty = ProgressStyle::with_template(
@@ -250,9 +244,9 @@ fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
                         &executable,
                         &benchmark_id,
                         &workdir,
-                        measurement_time,
-                        warmup_time,
-                        sample_size,
+                        &measurement_time,
+                        &warmup_time,
+                        &sample_size,
                     ),
                     format!("{}/{}/{}", project.name, group.name, benchmark_id),
                 ));
@@ -264,10 +258,73 @@ fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
     }
     m.remove(&compile_project_bar);
 
+    commands
+}
+pub fn run_project_consecutive(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64) {
+    enable_cores();
+    let commands = compile_projects(&measurement_time, &warmup_time, &sample_size);
+
+    let m = MultiProgress::new();
+
+    let sty = ProgressStyle::with_template(
+        "[{elapsed_precise} | {eta_precise}] {wide_bar:.cyan/blue} {pos:>4}/{len:4}",
+    )
+        .unwrap();
+
+
+    disable_cores();
+
+    let command_sty = ProgressStyle::with_template(
+        "[{elapsed_precise} | {eta_precise}] {bar:40.cyan/blue} {pos:>3}/{len:3} {msg}",
+    )
+        .unwrap()
+        .progress_chars("##-");
+
+    let command_bar = ProgressBar::new(commands.len() as u64).with_style(command_sty);
+    m.add(command_bar.clone());
+    for (mut command, name) in commands {
+        let progress_bar = ProgressBar::new(iterations as u64).with_style(sty.clone());
+        m.add(progress_bar.clone());
+        (0..iterations).for_each(|_| {
+            run_command(&mut command);
+            progress_bar.inc(1);
+        });
+        m.remove(&progress_bar);
+    }
+
+    m.remove(&command_bar);
+
+    let target_projects = read_target_projects();
+
+    // Save all data
+    let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
+    for record in &target_projects {
+        let project = Project::load(&record.name).expect("Could not load project");
+        move_data_for_project(project, &timestamp);
+    }
+}
+
+pub fn run(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64, no_rmit: bool) {
+    if no_rmit {
+        run_project_consecutive(iterations, measurement_time, warmup_time, sample_size)
+    } else {
+        // Default
+        for i in 0..iterations {
+            println!("Running iteration #{}", i + 1);
+            iteration(&measurement_time, &warmup_time, &sample_size);
+        }
+    }
+}
+
+fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
+    enable_cores();
+    let mut commands = compile_projects(measurement_time, warmup_time, sample_size);
+
     disable_cores();
 
     // Shuffle commands
     commands.shuffle(&mut thread_rng());
+    let m = MultiProgress::new();
 
     let sty = ProgressStyle::with_template(
         "[{elapsed_precise} | {eta_precise}] {wide_bar:.cyan/blue} {pos:>4}/{len:4}",
@@ -300,6 +357,7 @@ fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
         println!("The following benchmarks failed:");
         println!("{}", failures.join("\n"));
     }
+    let target_projects = read_target_projects();
 
     // Save all data
     let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
