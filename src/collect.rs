@@ -1,25 +1,23 @@
-#![allow(unused)]
-
-use std::fs;
-use std::ops::Add;
+use std::env;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::string::ToString;
+use std::time::Duration;
+use byteorder::WriteBytesExt;
 
-use itertools::Itertools;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use regex::Regex;
+use rstats::Printing;
 use serde::{Deserialize, Serialize};
-use crate::probe::{create_named_probe_for_adresses, delete_probe, find_probe_addresses};
-use crate::project::{BenchFile, get_workdir_for_project, Project, read_target_projects, TargetProject};
+use syscalls::Sysno::clone;
 
-
-// use crate::probe::{create_named_probe_for_adresses, delete_probe, find_probe_addresses};
-// use crate::project::BenchFile;
-// use crate::project::{get_workdir_for_project, read_target_projects, Project, TargetProject};
-
-// mod ::probe;
-// mod project;
+use crate::data::compileroutput::CompilerOutputElement;
+use crate::data::project::{
+    BenchFile, get_workdir_for_project, Project, read_target_projects,
+};
 
 // Enable setting probes and traces
 // sudo sysctl kernel.perf_event_paranoid=-1 -w
@@ -34,37 +32,46 @@ use crate::project::{BenchFile, get_workdir_for_project, Project, read_target_pr
 // Enable setting the process to a certain core
 // sudo groupadd nice
 // sudo usermod -a -G nice $USER
-
+// newgrp nice
 // echo "@nice - nice -19" | sudo tee -a /etc/security/limits.conf
 // echo "@nice hard nice -19" | sudo tee -a /etc/security/limits.conf
 // echo "@nice soft nice -19" | sudo tee -a /etc/security/limits.conf
 
 // Do a logout
 
-static mut ITERATIONS: usize = 1;
-static mut CPU: usize = 1;
-static mut PROFILE_TIME: u64 = 30;
-
-#[derive(Debug, Serialize)]
-struct IterationStat {
-    benchmark: Benchmark,
-    instructions: u64,
-    iterations: u64,
-    branches: u64,
-    branch_misses: u64,
-    cache_misses: u64,
-    cycles: u64,
-    context_switches: u64,
-    power_usage: f64,
+macro_rules! debugln {
+    () => {
+        if env::var("ENERGY_DEBUG").is_ok() {
+            println();
+        }
+    };
+    ($($arg:tt)*) => {
+        if env::var("ENERGY_DEBUG").is_ok() {
+            println!($($arg)*);
+        }
+    };
 }
 
-#[derive(Debug, Clone)]
-struct Probe {
-    name: String,
-    location: String,
-    binary: String,
-    project: String,
-}
+// #[derive(Debug, Serialize)]
+// struct IterationStat {
+//     benchmark: Benchmark,
+//     instructions: u64,
+//     iterations: u64,
+//     branches: u64,
+//     branch_misses: u64,
+//     cache_misses: u64,
+//     cycles: u64,
+//     context_switches: u64,
+//     power_usage: f64,
+// }
+
+// #[derive(Debug, Clone)]
+// struct Probe {
+//     name: String,
+//     location: String,
+//     binary: String,
+//     project: String,
+// }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Hash, PartialOrd, PartialEq, Eq)]
 pub struct Benchmark {
@@ -81,30 +88,6 @@ impl Benchmark {
             .join(&self.benchmark.replace(r" ", "_").replace("/", "_"))
             .join(self.id.replace(" ", "_").replace("/", "_"))
     }
-
-    fn get_clean_project(&self) -> String {
-        self.project.replace(" ", "_").replace("-", "_")
-    }
-
-    fn get_clean_benchmark(&self) -> String {
-        self.benchmark
-            .replace(" ", "_")
-            .replace("/", "_")
-            .replace("-", "_")
-    }
-
-    fn get_clean_id(&self) -> String {
-        self.id
-            .replace(" ", "_")
-            .replace("/", "_")
-            .replace("-", "_")
-    }
-
-
-    pub fn new(project: String, benchmark: String, path: String, id: String, features: Vec<String>) -> Self {
-        Self { project, benchmark, path, id, features }
-    }
-
 }
 
 impl ToString for Benchmark {
@@ -118,7 +101,7 @@ fn write_vec() {
     let mut wtr = csv::WriterBuilder::new()
         .has_headers(false)
         .from_writer(std::io::stdout());
-    let project = TargetProject {
+    let project = crate::data::project::TargetProject {
         name: "Hello".to_string(),
         repo_url: "".to_string(),
         repo_tag: "".to_string(),
@@ -126,218 +109,419 @@ fn write_vec() {
     wtr.serialize(project).expect("Couldn't write");
 }
 
+#[test]
 fn main() {
-    do_one_iteration(1, 1);
-    // do_one_iteration();
-    // do_one_iteration();
-    // do_one_iteration();
-    // do_one_iteration();
+    // Set debug mode
+    env::set_var("ENERGY_DEBUG", "");
+    env::set_var("KEEP_PROJECTS", "");
+    run(1, 5, 1, 5, false);
 }
 
+fn enable_cores() {
+    //echo 1 | tee /sys/devices/system/cpu/cpu3/online
+    // echo 0 | tee /sys/devices/system/cpu/cpu{1,2,4,5,6,7,8,9,10,11}/online
 
-pub fn run(iterations: usize, profile_time: u64, cpu: usize) {
+    glob::glob("/sys/devices/system/cpu/cpu*/online").expect("Found no cpu online files").for_each(|entry| {
+        match entry {
+            Ok(path) => {
+                let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
 
+                // Attempt write, dont crash
+                match write!(file, "1") {
+                    Ok(_) => {
+                        println!("Enabled core {:?}", &path);
 
-    for _ in 0..iterations {
-        do_one_iteration(profile_time, cpu);
-    }
+                    }
+                    Err(e) => {
+                        println!("Failed to enable core {:?}", e);
+
+                    }
+                };
+            }
+            Err(_) => {}
+        }
+    });
+
 }
 
+fn disable_cores() {
+    // Disable all, core 0 will fail
+    println!("{:?}", glob::glob("/sys/devices/system/cpu/cpu*/online"));
+    glob::glob("/sys/devices/system/cpu/cpu*/online").expect("Found no cpu online files").for_each(|entry| {
+        match entry {
+            Ok(path) => {
+                if path.to_str().unwrap().contains("cpu3") || path.to_str().unwrap().contains("cpu0") {
 
-fn do_one_iteration(profile_time: u64, cpu: usize) {
+                } else {
+                    let mut file = OpenOptions::new().write(true).truncate(true).open(&path).unwrap();
 
-    // Remove all artifacts
-    for record in read_target_projects() {
-        let project = Project::load(&record.name).expect("Could not load project {");
-        cargo_clean_project(&project.name)
+                    // Attempt write, dont crash
+                    match write!(file, "0") {
+                        Ok(_) => {
+                            println!("Disabled core {:?}", &path);
+                        }
+                        Err(e) => {
+                            println!("Failed to disable {:?}", e);
+                        }
+                    };
+                }
+
+            }
+            Err(_) => {}
+        }
+    });
+
+
+    Command::new("cset").args(["set", "-c", "3", "BENCH"]).status().unwrap();
+
+
+
+}
+
+fn compile_projects(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) -> Vec<(Command, String)> {
+    enable_cores();
+    let m = MultiProgress::new();
+    let sty = ProgressStyle::with_template(
+        "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+    )
+        .unwrap()
+        .progress_chars("##-");
+
+    // Clear artifacts
+    let target_projects = read_target_projects();
+
+    if !env::var("KEEP_PROJECTS").is_ok() {
+        let cargo_clear_bar = m.add(ProgressBar::new(target_projects.len() as u64));
+        cargo_clear_bar.set_style(sty.clone());
+
+        // Clear
+        for record in &target_projects {
+            let project = Project::load(&record.name).expect("Could not load project {");
+            cargo_clear_bar.set_message(format!("Clearing project: {}", &project.name));
+            cargo_clean_project(&project.name);
+            cargo_clear_bar.inc(1);
+        }
+
+        cargo_clear_bar.finish();
+        m.remove(&cargo_clear_bar);
     }
 
-    let mut run_requests: Vec<(Benchmark, Command)> = Default::default();
-    let mut existing_probes: Vec<String> = vec![];
+    let mut commands: Vec<(Command, String)> = Default::default();
 
-    for record in read_target_projects() {
-        println!("{:?}", record);
+    let compile_project_bar = m.add(ProgressBar::new(target_projects.len() as u64));
+    compile_project_bar.set_style(sty.clone());
+    compile_project_bar.tick();
+    compile_project_bar.enable_steady_tick(Duration::from_secs(1));
+
+    // Compile all files and give permissions to all executables
+    // Create command per benchmark
+    for record in &target_projects {
+        compile_project_bar.set_message(format!("Compiling project: {}", record.name.trim()));
 
         let target_project = record;
         let project = Project::load(&target_project.name).unwrap();
 
-
+        let bench_group_bar = m.insert_after(
+            &compile_project_bar,
+            ProgressBar::new(project.bench_files.len() as u64),
+        );
+        bench_group_bar.set_style(sty.clone());
+        bench_group_bar.tick();
+        bench_group_bar.enable_steady_tick(Duration::from_secs(1));
         for group in &project.bench_files {
+            bench_group_bar.set_message(format!("Compiling benchmark: {}", group.name.trim()));
+
             // Compile and save the executable
-            let executable = compile_benchmark_file(&group);
+            let executable = compile_benchmark_file(&group, None, None, None, None);
+            let executable = if executable.is_some() { executable.unwrap() } else { continue; };
 
-            // Create probes
-            let probe_addresses = find_probe_addresses(&project.name, &executable);
-            create_named_probe_for_adresses(
-                &project.clean_name(),
-                &project.name,
-                &executable,
-                probe_addresses,
-            );
-            existing_probes.push(group.get_clean_name());
+            let workdir = get_workdir_for_project(&group.project);
+            debugln!("Executable {} and workdir {:?}", &executable, &workdir);
 
-            for bench_id in group.benches.iter() {
-                let bench = Benchmark {
-                    project: project.name.clone(),
-                    benchmark: group.name.clone(),
-                    path: group.source.clone(),
-                    id: bench_id.clone(),
-                    features: group.features.clone(),
-                };
-
-                let command = create_command_for_bench(&bench, profile_time, cpu);
-                run_requests.push((bench, command));
+            for benchmark_id in group.benches.iter() {
+                commands.push((
+                    criterion_bench_command(
+                        &executable,
+                        &benchmark_id,
+                        &workdir,
+                        &measurement_time,
+                        &warmup_time,
+                        &sample_size,
+                    ),
+                    format!("{}/{}/{}", project.name, group.name, benchmark_id),
+                ));
             }
+            bench_group_bar.inc(1);
+        }
+        compile_project_bar.inc(1);
+        m.remove(&bench_group_bar);
+    }
+    m.remove(&compile_project_bar);
+
+    commands
+}
+pub fn run_project_consecutive(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64) {
+    enable_cores();
+    let commands = compile_projects(&measurement_time, &warmup_time, &sample_size);
+
+    let m = MultiProgress::new();
+
+    let sty = ProgressStyle::with_template(
+        "[{elapsed_precise} | {eta_precise}] {wide_bar:.cyan/blue} {pos:>4}/{len:4}",
+    )
+        .unwrap();
+
+
+    disable_cores();
+
+    let command_sty = ProgressStyle::with_template(
+        "[{elapsed_precise} | {eta_precise}] {bar:40.cyan/blue} {pos:>3}/{len:3} {msg}",
+    )
+        .unwrap()
+        .progress_chars("##-");
+    
+    let command_bar = ProgressBar::new(commands.len() as u64).with_style(command_sty);
+    m.add(command_bar.clone());
+    command_bar.tick();
+    command_bar.enable_steady_tick(Duration::from_secs(5));
+    for (mut command, name) in commands {
+        let progress_bar = ProgressBar::new(iterations as u64).with_style(sty.clone());
+        m.add(progress_bar.clone());
+        progress_bar.tick();
+        command_bar.enable_steady_tick(Duration::from_secs(5));
+
+        (0..iterations).for_each(|_| {
+            run_command(&mut command);
+            progress_bar.inc(1);
+        });
+        progress_bar.finish_and_clear();
+        m.remove(&progress_bar);
+        command_bar.inc(1);
+    }
+    
+    command_bar.finish_and_clear();
+
+    
+    m.remove(&command_bar);
+
+    let target_projects = read_target_projects();
+
+    // Save all data
+    let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
+    for record in &target_projects {
+        let project = Project::load(&record.name).expect("Could not load project");
+        move_data_for_project(project, &timestamp);
+    }
+}
+
+pub fn run(iterations: usize, measurement_time: u64, warmup_time: u64, sample_size: u64, no_rmit: bool) {
+    if no_rmit {
+        run_project_consecutive(iterations, measurement_time, warmup_time, sample_size)
+    } else {
+        // Default
+        for i in 0..iterations {
+            println!("Running iteration #{}", i + 1);
+            iteration(&measurement_time, &warmup_time, &sample_size);
+        }
+    }
+}
+
+fn iteration(measurement_time: &u64, warmup_time: &u64, sample_size: &u64) {
+    enable_cores();
+    let mut commands = compile_projects(measurement_time, warmup_time, sample_size);
+
+    disable_cores();
+
+    // Shuffle commands
+    commands.shuffle(&mut thread_rng());
+    let m = MultiProgress::new();
+
+    let sty = ProgressStyle::with_template(
+        "[{elapsed_precise} | {eta_precise}] {wide_bar:.cyan/blue} {pos:>4}/{len:4}",
+    )
+        .unwrap();
+
+    // Set up progress bar for commands
+    let progress_bar = ProgressBar::new(commands.len() as u64);
+    progress_bar.clone().with_style(sty.clone());
+    progress_bar
+        .clone()
+        .enable_steady_tick(Duration::from_secs(1));
+
+    m.add(progress_bar.clone());
+    println!("Number of commands: {}", commands.len());
+
+    let mut failures: Vec<String> = Default::default();
+
+    // Run commands
+    while let Some((mut cmd, _)) = commands.pop() {
+        let success = run_command(&mut cmd);
+        progress_bar.inc(1);
+        if !success {
+            failures.push(format!("{cmd:?}"));
         }
     }
 
-    run_requests.shuffle(&mut thread_rng());
+    // Check if all commands were succesful
+    if failures.len() > 0 {
+        println!("The following benchmarks failed:");
+        println!("{}", failures.join("\n"));
+    }
+    let target_projects = read_target_projects();
 
-    run_requests
-        .iter_mut()
-        .for_each(|(b, c)| run_benchmark(b, c));
-
-    for probe in existing_probes {
-        delete_probe(&format!("probe_{}:*", probe));
+    // Save all data
+    let timestamp = chrono::offset::Local::now().timestamp_millis().to_string();
+    for record in &target_projects {
+        let project = Project::load(&record.name).expect("Could not load project");
+        move_data_for_project(project, &timestamp);
     }
 }
 
-pub fn create_command_for_bench(benchmark: &Benchmark, profile_time: u64, cpu: usize) -> Command {
-    let events: String = vec![
-        "duration_time",
-        "cycles",
-        "instructions",
-        "branches",
-        "branch-misses",
-        "cache-misses",
-        "context-switches",
-        // "r119", // Energy per core
-        // "r19c", // Temperature IA32_THERMAL_STATUS register, bits 22:16 are temp in C
-        "power/energy-pkg/",
-        // "power/energy-ram/",
-        // "mem-loads", // Always 0
-        &format!("probe_{}:{}*", benchmark.get_clean_benchmark(), benchmark.get_clean_project()),
-    ]
-        .join(",");
-
-    let perf_output_file = format!("{}.csv", benchmark.get_clean_id());
-    let perf_output_file_path = Path::new(&std::env::current_dir().unwrap())
-        .join("data")
-        .join(&benchmark.get_clean_project())
-        .join(benchmark.get_clean_benchmark())
-        .join(perf_output_file)
-        .to_str()
-        .unwrap()
+#[test]
+fn test_move() {
+    let timestamp = chrono::offset::Local::now()
+        .format("%Y%m%d%H%M%S")
         .to_string();
-    fs::create_dir_all(Path::new(&perf_output_file_path).parent().unwrap());
-
-    let mut command = Command::new("perf");
-
-    // Set up the environment for the command
-    command
-        .env("CARGO_PROFILE_BENCH_LTO", "no") // Debug info is stripped if LTO is on
-        .env("CARGO_PROFILE_BENCH_DEBUG", "true") // Probe requires debuginfo
-        .current_dir(get_workdir_for_project(&benchmark.project)); // Work in the project directory
-
-    // Configure perf
-    command
-        .arg("stat")
-        .arg("--append").arg("-o").arg(perf_output_file_path)// Append to the file for this benchmark
-        .arg("-e").arg(events)// The list of events we want to collect
-        .arg("-x;") // Output all on one line separated by comma
-        .arg("-C").arg(cpu.to_string()) // measure core CPU
-        .arg("-I1000")// Output every one second
-        .arg("--"); // Command for perf to execute come after this
-
-
-    // Taskset - run on the specified core
-    command
-        .arg("taskset").arg("--cpu-list").arg(cpu.to_string())
-
-        // Nice process affinity
-        // Run the process with the highest priority
-        .arg("nice").arg("-n").arg("-19")
-
-        // Cargo bench command
-        .arg("cargo")
-        .arg("bench")
-        .arg("--bench")
-        .arg(&benchmark.benchmark);
-
-    // Add cargo features if applicable
-    if benchmark.features.len() > 0 {
-        command.arg("--features").arg(&benchmark.features.join(","));
+    for record in read_target_projects() {
+        let project = Project::load(&record.name).expect("Could not load project");
+        move_data_for_project(project, &timestamp);
     }
-
-    // Commands to criterion
-    command
-        .arg("--")// The commands after -- get sent to the criterion framework
-        .arg("--profile-time").arg(profile_time.to_string())
-        // Last argument of criterion is <filter>, which acts as a regex.
-        // This way we match and only match the benchmark we want
-        .arg(format!("^{}$", &benchmark.id));
-
-    command // Return the command
 }
 
-fn run_benchmark(benchmark: &Benchmark, cmd: &mut Command) {
-    println!(
-        "Running project: {}, benchmark: {}, id: {} at {}",
-        &benchmark.project,
-        &benchmark.benchmark,
-        &benchmark.id,
-        cmd.get_current_dir().unwrap().to_str().unwrap()
-    );
-    println!("{:?}", cmd);
-    let output = cmd.output().unwrap();
-    let status = output.status;
-    println!("{}", status);
+fn move_data_for_project(project: Project, timestamp: &str) {
+    let from = get_workdir_for_project(&project.name)
+        .join("target")
+        .join("criterion");
+    let to = env::current_dir()
+        .unwrap()
+        .join("data")
+        .join(timestamp)
+        .join(&project.name);
+
+    Command::new("mkdir")
+        .args(["-p", &to.to_string_lossy()])
+        .output()
+        .unwrap();
+
+    Command::new("mv")
+        .args([
+            &from.to_string_lossy().to_str(),
+            &to.to_string_lossy().to_string(),
+        ])
+        .status()
+        .unwrap();
+}
+
+fn run_command(command: &mut Command) -> bool {
+    debugln!("{command:?}");
+    debugln!("workdir: {:?}", command.get_current_dir());
+    let output = command.output().unwrap();
+    debugln!("{}", String::from_utf8(output.stdout).unwrap());
+    output.status.success()
+}
+
+fn criterion_bench_command(
+    executable: &str,
+    benchmark_id: &str,
+    workdir: &PathBuf,
+    measurement_time: &u64,
+    warmup_time: &u64,
+    sample_size: &u64,
+) -> Command {
+    let mut bench_binary = Command::new("cset");
+
+    // Setup `cpuset`
+    bench_binary.args(["proc", "--exec", "BENCH", "--"]);
+
+    // Configure the benchmark settings
+    bench_binary
+        .current_dir(workdir.as_path())
+        // The Benchmark
+        .args(&[executable, "--bench"])
+        .args(["--measurement-time", &measurement_time.to_str()])
+        .args(["--warm-up-time", &warmup_time.to_str()])
+        .args(["--sample-size", &sample_size.to_str()])
+        // Criterion uses a regex to select benchmarks,
+        // so we do this to prevent selecting multiple benchmarks to run
+        .arg(format!("^{}$", benchmark_id));
+    bench_binary
 }
 
 fn cargo_clean_project(project: &str) -> () {
     Command::new("cargo")
         .arg("clean")
-        .current_dir(get_workdir_for_project(project))
+        .current_dir(get_workdir_for_project(project).as_path())
         .output()
         .unwrap();
 }
 
-pub fn compile_benchmark_file(benchmark: &BenchFile) -> String {
-    println!(
+pub fn compile_benchmark_file(
+    benchmark: &BenchFile,
+    toolchain: Option<String>,
+    args: Option<Vec<&str>>,
+    features: Option<Vec<&str>>,
+    envs: Option<std::collections::HashMap<&str, &str>>,
+) -> Option<String> {
+    debugln!(
         "Compiling {} in {}",
         benchmark.name,
         benchmark.get_workdir()
     );
+
     let mut cargo = Command::new("cargo");
+
+    if let Some(toolchain) = toolchain {
+        cargo.arg(toolchain);
+    }
+
+    if let Some(env_map) = envs {
+        cargo.envs(env_map);
+    }
 
     cargo
         .arg("bench") // cargo bench
-        .current_dir(get_workdir_for_project(&benchmark.project).join(benchmark.get_workdir())) // TODO get this from benchmark
-        .env("CARGO_PROFILE_BENCH_DEBUG", "true") // We need debug info to find probepoints
-        .env("CARGO_PROFILE_BENCH_LTO", "no") // Debug info is stripped if LTO is on
+        .current_dir(get_workdir_for_project(&benchmark.project))
         .arg("--bench")
         .arg(&benchmark.name)
-        .arg("--no-run");
+        .arg("--no-run")
+        .arg("--message-format=json");
 
-    if benchmark.features.len() > 0 {
-        cargo.arg("--features").arg(benchmark.features.join(","));
+    if let Some(args) = args {
+        cargo.args(args);
     }
 
-    println!("{:?}", cargo);
+    let mut features = features.unwrap_or(Vec::new());
+    features.extend(benchmark.features.iter().map(String::as_str));
 
-    let raw = cargo.output().unwrap();
-
-    let output = std::str::from_utf8(&*raw.stderr).unwrap().to_string();
-    // println!("{}", output);
-    let regex = Regex::new(r"Executable .*? \((.*?target/release/deps/[\w_-]+)\)").unwrap();
-    let mut string = String::new();
-    let mut matches = regex.captures_iter(&output);
-    let next = matches.next();
-    if next.is_some() {
-        string.push_str(&next.unwrap()[1]);
-    } else {
-        println!("{}", output);
+    if features.len() > 0 {
+        cargo.arg("--features").arg(features.join(","));
     }
 
-    string
+    debugln!("Compile command: {:?}", cargo);
+
+    let output = cargo.output().unwrap();
+    let stdout = std::str::from_utf8(&*output.stdout).unwrap().to_string();
+    // println!("{}", stdout);
+    let compiler_emits: Option<String> = stdout
+        .split("\n")
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str::<CompilerOutputElement>(&line).unwrap())
+        // .filter(|elem| elem.target.name == benchmark.name)
+        .filter_map(|elem| elem.executable)
+        .last();
+
+    compiler_emits
+}
+
+#[test]
+fn test_current_dir() {
+    let mut command = Command::new("pwd");
+    command.current_dir("/home/rens/thesis/scrape-crates/projects/chrono");
+    println!("{command:?}");
+    assert_eq!(
+        String::from_utf8(command.output().unwrap().stdout)
+            .unwrap()
+            .trim(),
+        "/home/rens/thesis/scrape-crates/projects/chrono"
+    )
 }
